@@ -1,0 +1,6 @@
+{
+  "name": "StockAI - AI Stock Metadata Platform",
+  "description": "Intelligent AI metadata platform for stock contributors. Automated title, keyword, category, and marketplace SEO generation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

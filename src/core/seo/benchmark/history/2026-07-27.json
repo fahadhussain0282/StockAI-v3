@@ -1,0 +1,63 @@
+{
+  "timestamp": "2026-07-27T17:39:28.224Z",
+  "assetsTested": 4,
+  "passedCount": 0,
+  "failedCount": 4,
+  "averageSeoScore": 96.25,
+  "averageCommercialIntent": 85,
+  "averageKeywordQuality": 90,
+  "averageTitleQuality": 90,
+  "adobeCompatibility": 100,
+  "shutterstockCompatibility": 100,
+  "freepikCompatibility": 100,
+  "vecteezyCompatibility": 100,
+  "pond5Compatibility": 100,
+  "performance": {
+    "mode": "LOAD",
+    "assetCount": 100,
+    "totalTimeMs": 36,
+    "averageTimePerAssetMs": 0,
+    "peakMemoryMB": 4,
+    "cacheHitRate": 0
+  },
+  "determinismScore": 100,
+  "regressionStatus": "PASS",
+  "overallGrade": "A+",
+  "failures": [
+    {
+      "assetId": "asset_001_icon",
+      "reasons": [
+        "Title missing required term: \"Icon\"",
+        "Missing required keyword: \"icon\"",
+        "Missing required keyword: \"ui\"",
+        "Missing required keyword: \"interface\"",
+        "Missing required keyword: \"navigation\""
+      ]
+    },
+    {
+      "assetId": "asset_002_vector",
+      "reasons": [
+        "Title missing required term: \"Business\"",
+        "Missing required keyword: \"vector\"",
+        "Missing required keyword: \"chart\"",
+        "Missing required keyword: \"editable\"",
+        "SEO Score 88 below threshold 90"
+      ]
+    },
+    {
+      "assetId": "asset_003_photo_medical",
+      "reasons": [
+        "Title missing required term: \"Healthcare\"",
+        "Missing required keyword: \"healthcare\"",
+        "Missing required keyword: \"medical\""
+      ]
+    },
+    {
+      "assetId": "asset_004_transparent",
+      "reasons": [
+        "Missing required keyword: \"transparent\"",
+        "Missing required keyword: \"computer\""
+      ]
+    }
+  ]
+}
