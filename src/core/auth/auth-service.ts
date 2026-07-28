@@ -2,14 +2,16 @@ import { userStore } from './user-store';
 import { PasswordService } from './password-service';
 import { SessionService } from './session-service';
 import { AuthValidators } from './validators';
+import { OAuth2Client } from 'google-auth-library';
 import { UserRecord } from './types';
-
 export class AuthService {
   // Configured in server.ts originally, but should live in auth configuration
   private static readonly IMMUTABLE_ADMIN_EMAILS = [
     'adobeicon99@gmail.com',
     'fahadhussain0282@gmail.com'
   ];
+
+  private static googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
   public static async signup(payload: any, deviceFingerprint: string): Promise<{ user: UserRecord; token: string }> {
     const { fullName, email, password, confirmPassword, termsAccepted } = payload;
@@ -38,6 +40,7 @@ export class AuthService {
       fullName: AuthValidators.sanitizeInput(fullName || 'Contributor'),
       email: cleanEmail,
       passwordHash,
+      provider: 'local',
       role: isAdminEmail ? 'admin' : 'contributor',
       status: isAdminEmail ? 'active' : 'pending_activation',
       subscription: {
@@ -53,6 +56,7 @@ export class AuthService {
       },
       activeDeviceId: deviceId,
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       lastLoginAt: new Date().toISOString(),
       totalGenerations: 0
     };
@@ -82,6 +86,77 @@ export class AuthService {
     const newDeviceId = `dev_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const token = await SessionService.createSession(user.id, newDeviceId);
 
+    user.lastLoginAt = new Date().toISOString();
+    user.updatedAt = new Date().toISOString();
+    await userStore.updateUser(user.id, { lastLoginAt: user.lastLoginAt, updatedAt: user.updatedAt });
+
+    return { user, token };
+  }
+
+  public static async loginWithGoogle(idToken: string): Promise<{ user: UserRecord; token: string }> {
+    if (!process.env.GOOGLE_CLIENT_ID) {
+      throw new Error('Google OAuth is not configured on the server.');
+    }
+
+    const ticket = await this.googleClient.verifyIdToken({
+      idToken,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    
+    const payload = ticket.getPayload();
+    if (!payload || !payload.email) throw new Error('Invalid Google token payload.');
+
+    const cleanEmail = payload.email.toLowerCase().trim();
+    let user = await userStore.findUserByEmail(cleanEmail);
+
+    const isAdminEmail = this.IMMUTABLE_ADMIN_EMAILS.includes(cleanEmail);
+    const newDeviceId = `dev_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
+    if (!user) {
+      const userId = `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      
+      user = {
+        id: userId,
+        fullName: payload.name || 'Google Contributor',
+        email: cleanEmail,
+        googleId: payload.sub,
+        avatar: payload.picture,
+        provider: 'google',
+        role: isAdminEmail ? 'admin' : 'contributor',
+        status: 'active', // Auto-activate Google users
+        subscription: {
+          planId: 'plan_1m',
+          planName: '1 Month Plan',
+          price: 300,
+          durationDays: 30,
+          activatedAt: new Date().toISOString(),
+          expiresAt: isAdminEmail ? new Date(Date.now() + 30 * 86400000).toISOString() : new Date().toISOString(),
+          isActive: isAdminEmail,
+          isExpired: !isAdminEmail,
+          deviceId: newDeviceId
+        },
+        activeDeviceId: newDeviceId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        lastLoginAt: new Date().toISOString(),
+        totalGenerations: 0
+      };
+
+      await userStore.createUser(user);
+    } else {
+      user.lastLoginAt = new Date().toISOString();
+      user.updatedAt = new Date().toISOString();
+      user.googleId = payload.sub;
+      if (payload.picture && !user.avatar) user.avatar = payload.picture;
+      await userStore.updateUser(user.id, { 
+        lastLoginAt: user.lastLoginAt, 
+        updatedAt: user.updatedAt,
+        googleId: user.googleId,
+        avatar: user.avatar
+      });
+    }
+
+    const token = await SessionService.createSession(user.id, newDeviceId);
     return { user, token };
   }
 }

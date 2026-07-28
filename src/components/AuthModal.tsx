@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, Lock, Mail, User, ShieldCheck, ArrowRight, CheckCircle2, KeyRound } from 'lucide-react';
+import { GoogleLogin } from '@react-oauth/google';
 import { AuthUser } from '../types';
 
 interface AuthModalProps {
@@ -61,7 +62,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         })
       });
 
-      const data = await res.json();
+      let data;
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        throw new Error('Authentication service is temporarily unavailable.');
+      }
 
       if (!res.ok) {
         throw new Error(data.error || 'Authentication failed.');
@@ -74,6 +81,49 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       }, 500);
     } catch (err: any) {
       setError(err.message || 'Failed to authenticate.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleSuccess = async (credentialResponse: any) => {
+    setError('');
+    setSuccessMsg('');
+    setIsLoading(true);
+    
+    try {
+      const res = await fetch('/api/auth/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idToken: credentialResponse.credential,
+          deviceFingerprint: {
+            userAgent: navigator.userAgent,
+            platform: navigator.platform,
+            screen: `${window.screen.width}x${window.screen.height}`
+          }
+        })
+      });
+
+      let data;
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        throw new Error('Authentication service is temporarily unavailable.');
+      }
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Google authentication failed.');
+      }
+
+      setSuccessMsg('Google Authentication successful! Logging in...');
+      setTimeout(() => {
+        onAuthSuccess(data.user, data.token);
+        onClose();
+      }, 500);
+    } catch (err: any) {
+      setError(err.message || 'Failed to authenticate with Google.');
     } finally {
       setIsLoading(false);
     }
@@ -120,7 +170,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         })
       });
 
-      const data = await res.json();
+      let data;
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        throw new Error('Authentication service is temporarily unavailable.');
+      }
 
       if (!res.ok) {
         throw new Error(data.error || 'Account creation failed.');
@@ -269,6 +325,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               {isLoading ? 'Authenticating...' : 'Sign In To Workspace'}
               <ArrowRight className="w-4 h-4" />
             </button>
+            <div className="relative flex items-center py-2">
+              <div className="flex-grow border-t border-zinc-800"></div>
+              <span className="flex-shrink-0 mx-4 text-zinc-500 text-xs">Or continue with</span>
+              <div className="flex-grow border-t border-zinc-800"></div>
+            </div>
+            <div className="flex justify-center w-full">
+              <GoogleLogin
+                onSuccess={handleGoogleSuccess}
+                onError={() => setError('Google Authentication was unsuccessful or canceled.')}
+                theme="filled_black"
+                shape="rectangular"
+                width="100%"
+                text="continue_with"
+              />
+            </div>
           </form>
         )}
 
@@ -351,6 +422,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               {isLoading ? 'Creating Account...' : 'Register Contributor Account'}
               <ArrowRight className="w-4 h-4" />
             </button>
+            <div className="relative flex items-center py-2">
+              <div className="flex-grow border-t border-zinc-800"></div>
+              <span className="flex-shrink-0 mx-4 text-zinc-500 text-xs">Or continue with</span>
+              <div className="flex-grow border-t border-zinc-800"></div>
+            </div>
+            <div className="flex justify-center w-full">
+              <GoogleLogin
+                onSuccess={handleGoogleSuccess}
+                onError={() => setError('Google Authentication was unsuccessful or canceled.')}
+                theme="filled_black"
+                shape="rectangular"
+                width="100%"
+                text="continue_with"
+              />
+            </div>
           </form>
         )}
 

@@ -32,6 +32,19 @@ router.post('/login', async (req: Request, res: Response) => {
   }
 });
 
+// Google Login Route
+router.post('/google', async (req: Request, res: Response) => {
+  try {
+    if (!req.body.idToken) {
+      return res.status(400).json({ error: 'Google ID token is required.' });
+    }
+    const result = await AuthService.loginWithGoogle(req.body.idToken);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(401).json({ error: err.message || 'Google authentication failed.' });
+  }
+});
+
 // Get Current User (Me) Route
 router.get('/me', AuthMiddleware.authenticate, (req: Request, res: Response) => {
   if (!req.auth) {

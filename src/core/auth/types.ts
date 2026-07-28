@@ -18,12 +18,16 @@ export interface UserRecord {
   id: string;
   fullName: string;
   email: string;
-  passwordHash: string;
+  passwordHash?: string; // Optional for Google OAuth users
+  googleId?: string;
+  avatar?: string;
+  provider: 'local' | 'google';
   role: Role;
   status: UserStatus;
   subscription: UserSubscription;
   activeDeviceId: string;
   createdAt: string;
+  updatedAt: string;
   lastLoginAt: string;
   totalGenerations: number;
 }
