@@ -159,6 +159,7 @@ router.post('/add-member', async (req: Request, res: Response) => {
       fullName: fullName || 'Contributor Member',
       email: cleanEmail,
       passwordHash: 'default_hash',
+      provider: 'local',
       role: 'contributor',
       status: (status === 'pending' ? 'pending_activation' : (status || 'active')),
       subscription: {
@@ -373,6 +374,7 @@ router.post('/licenses/activate', async (req: Request, res: Response) => {
       fullName: 'Contributor Member',
       email: cleanEmail,
       passwordHash: 'default_hash',
+      provider: 'local',
       role: 'contributor',
       status: 'active',
       subscription: {
@@ -388,6 +390,7 @@ router.post('/licenses/activate', async (req: Request, res: Response) => {
       },
       activeDeviceId: newDevId,
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       lastLoginAt: new Date().toISOString(),
       totalGenerations: 0
     };

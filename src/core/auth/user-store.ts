@@ -95,6 +95,7 @@ class UserStoreImpl {
       fullName: 'Fahad Hussain',
       email: 'fahadhussain0282@gmail.com',
       passwordHash: 'admin123',
+      provider: 'local',
       role: 'admin',
       status: 'active',
       subscription: {
@@ -110,6 +111,7 @@ class UserStoreImpl {
       },
       activeDeviceId: 'dev_admin_01',
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       lastLoginAt: new Date().toISOString(),
       totalGenerations: 124
     });
@@ -119,6 +121,7 @@ class UserStoreImpl {
       fullName: 'Adobe Icon Studio',
       email: 'adobeicon99@gmail.com',
       passwordHash: 'admin123',
+      provider: 'local',
       role: 'admin',
       status: 'active',
       subscription: {
@@ -134,6 +137,7 @@ class UserStoreImpl {
       },
       activeDeviceId: 'dev_admin_02',
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       lastLoginAt: new Date().toISOString(),
       totalGenerations: 532
     });

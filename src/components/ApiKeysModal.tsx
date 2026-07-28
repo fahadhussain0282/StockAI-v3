@@ -63,17 +63,24 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({
           model: activeModel
         })
       });
-      const data = await res.json();
-      if (data.status === 'ok') {
-        setTestStatus('success');
-        setStatusMessage(data.message || 'Connection test successful!');
+      
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data.status === 'ok') {
+          setTestStatus('success');
+          setStatusMessage(data.message || 'Connection test successful!');
+        } else {
+          setTestStatus('error');
+          setStatusMessage(data.message || 'Connection failed. Please check your API key.');
+        }
       } else {
         setTestStatus('error');
-        setStatusMessage(data.message || 'Connection failed. Please check your API key.');
+        setStatusMessage(`Server error: ${res.status} ${res.statusText}`);
       }
-    } catch {
+    } catch (err: any) {
       setTestStatus('error');
-      setStatusMessage('Network error while testing connection.');
+      setStatusMessage(err.message || 'Network error while testing connection.');
     }
   };
 

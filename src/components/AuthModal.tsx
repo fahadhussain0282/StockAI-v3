@@ -7,12 +7,14 @@ interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAuthSuccess: (user: AuthUser, token: string) => void;
+  hideClose?: boolean;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,
   onClose,
-  onAuthSuccess
+  onAuthSuccess,
+  hideClose = false
 }) => {
   const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>('login');
   
@@ -207,12 +209,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 font-sans text-zinc-200">
       <div className="bg-[#0c0c0e] border border-zinc-800 rounded-lg max-w-md w-full p-6 space-y-5 shadow-2xl relative">
         {/* Close */}
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 w-7 h-7 rounded bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
-        >
-          <X className="w-4 h-4" />
-        </button>
+        {!hideClose && (
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 w-7 h-7 rounded bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
 
         {/* Brand Header */}
         <div className="text-center space-y-1.5 pt-2">

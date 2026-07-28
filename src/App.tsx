@@ -43,6 +43,7 @@ export default function App() {
 
   // Auth & Session State
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [isInitializing, setIsInitializing] = useState(true);
   const [authToken, setAuthToken] = useState<string>(() => localStorage.getItem('stockai_auth_token') || '');
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isLockedExperienceOpen, setIsLockedExperienceOpen] = useState(false);
@@ -75,35 +76,18 @@ export default function App() {
           setCurrentUser(data.user);
           setSubscription(data.user.subscription);
         }
+        setIsInitializing(false);
       })
       .catch(() => {
         setCurrentUser(null);
         setAuthToken('');
         localStorage.removeItem('stockai_auth_token');
+        setIsInitializing(false);
       });
     } else {
-      // Default initial admin demo account for preview
-      setCurrentUser({
-        id: 'usr_admin_1',
-        fullName: 'Fahad Hussain',
-        email: 'fahadhussain0282@gmail.com',
-        role: 'admin',
-        status: 'active',
-        subscription: {
-          planId: 'plan_1m',
-          planName: '1 Month Plan',
-          price: 300,
-          durationDays: 30,
-          activatedAt: new Date().toISOString(),
-          expiresAt: new Date(Date.now() + 30 * 86400000).toISOString(),
-          isActive: true,
-          isExpired: false,
-          deviceId
-        },
-        activeDeviceId: deviceId,
-        createdAt: new Date().toISOString(),
-        lastLoginAt: new Date().toISOString()
-      });
+      // Clear session if no auth token is present (No auto-login)
+      setCurrentUser(null);
+      setIsInitializing(false);
     }
   }, [authToken, deviceId]);
 
@@ -179,46 +163,61 @@ export default function App() {
     }
   }, [theme]);
 
-  // Provider & API Keys State
-  const [selectedProvider, setSelectedProviderState] = useState<string>(() => {
-    return localStorage.getItem('stockai_provider') || 'google-gemini';
+  // Provider & API Keys State (Isolated per user)
+  const [selectedProvider, setSelectedProviderState] = useState<string>('google-gemini');
+  const [providerKeys, setProviderKeysState] = useState<Record<string, string>>({ 'google-gemini': '', grok: '', groq: '' });
+  const [providerModels, setProviderModelsState] = useState<Record<string, string>>({
+    'google-gemini': 'gemini-3.6-flash',
+    grok: 'grok-2-vision-1212',
+    groq: 'llama-3.2-11b-vision-preview'
   });
 
-  const [providerKeys, setProviderKeysState] = useState<Record<string, string>>(() => {
-    try {
-      const saved = localStorage.getItem('stockai_provider_keys');
-      return saved ? JSON.parse(saved) : { 'google-gemini': '', grok: '', groq: '' };
-    } catch {
-      return { 'google-gemini': '', grok: '', groq: '' };
-    }
-  });
-
-  const [providerModels, setProviderModelsState] = useState<Record<string, string>>(() => {
-    try {
-      const saved = localStorage.getItem('stockai_provider_models');
-      return saved ? JSON.parse(saved) : {
+  // Load and isolate state on login/logout
+  useEffect(() => {
+    if (currentUser) {
+      try {
+        const uid = currentUser.id;
+        const savedProvider = localStorage.getItem(`stockai_provider_${uid}`);
+        if (savedProvider) setSelectedProviderState(savedProvider);
+        
+        const savedKeysStr = localStorage.getItem(`stockai_provider_keys_${uid}`);
+        if (savedKeysStr) {
+           setProviderKeysState(JSON.parse(atob(savedKeysStr)));
+        }
+        
+        const savedModelsStr = localStorage.getItem(`stockai_provider_models_${uid}`);
+        if (savedModelsStr) {
+           setProviderModelsState(JSON.parse(savedModelsStr));
+        }
+      } catch (e) {
+        console.error("Failed to load user settings", e);
+      }
+    } else {
+      // Completely clear all user-specific state for a new session
+      setSelectedProviderState('google-gemini');
+      setProviderKeysState({ 'google-gemini': '', grok: '', groq: '' });
+      setProviderModelsState({
         'google-gemini': 'gemini-3.6-flash',
         grok: 'grok-2-vision-1212',
         groq: 'llama-3.2-11b-vision-preview'
-      };
-    } catch {
-      return {
-        'google-gemini': 'gemini-3.6-flash',
-        grok: 'grok-2-vision-1212',
-        groq: 'llama-3.2-11b-vision-preview'
-      };
+      });
+      setFiles([]);
     }
-  });
+  }, [currentUser]);
 
   const setSelectedProvider = (provider: string) => {
     setSelectedProviderState(provider);
-    localStorage.setItem('stockai_provider', provider);
+    if (currentUser) {
+      localStorage.setItem(`stockai_provider_${currentUser.id}`, provider);
+    }
   };
 
   const setProviderKey = (provider: string, key: string) => {
     setProviderKeysState(prev => {
       const updated = { ...prev, [provider]: key };
-      localStorage.setItem('stockai_provider_keys', JSON.stringify(updated));
+      if (currentUser) {
+        localStorage.setItem(`stockai_provider_keys_${currentUser.id}`, btoa(JSON.stringify(updated)));
+      }
       return updated;
     });
   };
@@ -226,7 +225,9 @@ export default function App() {
   const setProviderModel = (provider: string, model: string) => {
     setProviderModelsState(prev => {
       const updated = { ...prev, [provider]: model };
-      localStorage.setItem('stockai_provider_models', JSON.stringify(updated));
+      if (currentUser) {
+        localStorage.setItem(`stockai_provider_models_${currentUser.id}`, JSON.stringify(updated));
+      }
       return updated;
     });
   };
@@ -581,6 +582,27 @@ export default function App() {
 
   const activeProviderName = PROVIDER_REGISTRY[selectedProvider]?.name || 'Google Gemini';
   const activeModelName = providerModels[selectedProvider] || 'gemini-3.6-flash';
+
+  if (isInitializing) {
+    return (
+      <div className="h-screen w-screen flex items-center justify-center bg-[#0c0c0e] text-white">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return (
+      <div className="h-screen w-screen bg-[#0c0c0e] flex items-center justify-center">
+        <AuthModal
+          isOpen={true}
+          onClose={() => {}}
+          onAuthSuccess={handleAuthSuccess}
+          hideClose={true}
+        />
+      </div>
+    );
+  }
 
   if (routePath === '/admin') {
     return (
