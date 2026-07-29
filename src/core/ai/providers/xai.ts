@@ -1,21 +1,34 @@
 import { BaseAiProvider } from './base-provider';
 import { AiModelDefinition, GenerateVisionOptions, NormalizedAiResponse } from '../types';
-import { XAI_MODELS } from '../models/xai-models';
+import { XAI_MODELS, XAI_VISION_FALLBACK_CHAIN, XAI_TEXT_FALLBACK_CHAIN, XAI_DEFAULT_VISION_MODEL, XAI_DEFAULT_TEXT_MODEL } from '../models/xai-models';
 
 export class XAiProvider extends BaseAiProvider {
   readonly id = 'xai';
   readonly name = 'xAI';
 
+  isEnabled(): boolean {
+    const key = process.env.XAI_API_KEY;
+    return !!key && key.trim().length > 0;
+  }
+
   getDefaultModel(): string {
-    return 'grok-2-latest';
+    return XAI_DEFAULT_TEXT_MODEL;
   }
 
   getVisionModel(): string {
-    return 'grok-2-vision-latest';
+    return XAI_DEFAULT_VISION_MODEL;
   }
 
   listModels(): AiModelDefinition[] {
     return XAI_MODELS;
+  }
+
+  getVisionFallbackChain(): string[] {
+    return XAI_VISION_FALLBACK_CHAIN;
+  }
+
+  getTextFallbackChain(): string[] {
+    return XAI_TEXT_FALLBACK_CHAIN;
   }
 
   async generateVisionAnalysis(options: GenerateVisionOptions): Promise<NormalizedAiResponse> {
@@ -24,7 +37,7 @@ export class XAiProvider extends BaseAiProvider {
       : process.env.XAI_API_KEY;
       
     if (!key || key.trim().length === 0) {
-      throw new Error('XAI_API_KEY is not configured or invalid.');
+      throw new Error('AUTH_ERROR: XAI_API_KEY is not configured or invalid.');
     }
 
     const modelToUse = options.model || this.getVisionModel();
@@ -33,6 +46,8 @@ export class XAiProvider extends BaseAiProvider {
     }
 
     const start = Date.now();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
     let parsed: any;
     let rawStr = '';
 
@@ -65,9 +80,18 @@ export class XAiProvider extends BaseAiProvider {
           model: modelToUse,
           messages,
           response_format: { type: 'json_object' }
-        })
+        }),
+        signal: controller.signal
       });
 
+      clearTimeout(timeoutId);
+
+      if (res.status === 401 || res.status === 403) {
+        throw new Error('AUTH_ERROR: xAI API key is invalid or unauthorized.');
+      }
+      if (res.status === 429) {
+        throw new Error('RATE_LIMIT: xAI rate limit reached. Please retry shortly.');
+      }
       if (!res.ok) {
         const errStr = await res.text();
         throw new Error(`xAI API Error: ${res.status} ${errStr}`);
@@ -98,6 +122,9 @@ export class XAiProvider extends BaseAiProvider {
         parsedResponse: parsed
       };
     } catch (err: any) {
+      clearTimeout(timeoutId);
+      if (err.name === 'AbortError') throw new Error('xAI API request timed out after 25 seconds.');
+      if (err.message?.startsWith('AUTH_ERROR:') || err.message?.startsWith('RATE_LIMIT:')) throw err;
       throw new Error(`xAI API Failed: ${err.message}`);
     }
   }

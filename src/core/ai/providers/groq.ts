@@ -1,21 +1,34 @@
 import { BaseAiProvider } from './base-provider';
 import { AiModelDefinition, GenerateVisionOptions, NormalizedAiResponse } from '../types';
-import { GROQ_MODELS } from '../models/groq-models';
+import { GROQ_MODELS, GROQ_VISION_FALLBACK_CHAIN, GROQ_TEXT_FALLBACK_CHAIN, GROQ_DEFAULT_VISION_MODEL, GROQ_DEFAULT_TEXT_MODEL } from '../models/groq-models';
 
 export class GroqProvider extends BaseAiProvider {
   readonly id = 'groq';
   readonly name = 'Groq Cloud';
 
+  isEnabled(): boolean {
+    const key = process.env.GROQ_API_KEY;
+    return !!key && key.trim().length > 0;
+  }
+
   getDefaultModel(): string {
-    return 'llama3-70b-8192';
+    return GROQ_DEFAULT_TEXT_MODEL;
   }
 
   getVisionModel(): string {
-    return 'llama-3.2-90b-vision-preview';
+    return GROQ_DEFAULT_VISION_MODEL;
   }
 
   listModels(): AiModelDefinition[] {
     return GROQ_MODELS;
+  }
+
+  getVisionFallbackChain(): string[] {
+    return GROQ_VISION_FALLBACK_CHAIN;
+  }
+
+  getTextFallbackChain(): string[] {
+    return GROQ_TEXT_FALLBACK_CHAIN;
   }
 
   async generateVisionAnalysis(options: GenerateVisionOptions): Promise<NormalizedAiResponse> {
@@ -24,7 +37,7 @@ export class GroqProvider extends BaseAiProvider {
       : process.env.GROQ_API_KEY;
       
     if (!key || key.trim().length === 0) {
-      throw new Error('GROQ_API_KEY is not configured or invalid.');
+      throw new Error('AUTH_ERROR: GROQ_API_KEY is not configured or invalid.');
     }
 
     const modelToUse = options.model || this.getVisionModel();
@@ -33,6 +46,8 @@ export class GroqProvider extends BaseAiProvider {
     }
 
     const start = Date.now();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
     let parsed: any;
     let rawStr = '';
 
@@ -65,9 +80,18 @@ export class GroqProvider extends BaseAiProvider {
           model: modelToUse,
           messages,
           response_format: { type: 'json_object' }
-        })
+        }),
+        signal: controller.signal
       });
 
+      clearTimeout(timeoutId);
+
+      if (res.status === 401 || res.status === 403) {
+        throw new Error('AUTH_ERROR: Groq API key is invalid or unauthorized.');
+      }
+      if (res.status === 429) {
+        throw new Error('RATE_LIMIT: Groq rate limit reached. Please retry shortly.');
+      }
       if (!res.ok) {
         const errStr = await res.text();
         throw new Error(`Groq API Error: ${res.status} ${errStr}`);
@@ -98,6 +122,9 @@ export class GroqProvider extends BaseAiProvider {
         parsedResponse: parsed
       };
     } catch (err: any) {
+      clearTimeout(timeoutId);
+      if (err.name === 'AbortError') throw new Error('Groq API request timed out after 25 seconds.');
+      if (err.message?.startsWith('AUTH_ERROR:') || err.message?.startsWith('RATE_LIMIT:')) throw err;
       throw new Error(`Groq API Failed: ${err.message}`);
     }
   }

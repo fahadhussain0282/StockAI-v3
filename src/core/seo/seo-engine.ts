@@ -93,11 +93,11 @@ export class SeoEngine {
     console.log(`Base64 Length: ${resolvedBase64?.length || 0} characters`);
     console.log(`Mime Type: ${resolvedMimeType}`);
 
-    // AI Context building
+    // AI Context building - Enterprise SEO V2 Upgrade
     let systemInstruction = `You are StockAI's proprietary Intelligence Engine V3, an expert microstock metadata specialist.
 CRITICAL: Populate a complete Shared Metadata Context (Asset Type, Subject, Style, Industry, Purpose, Audience, Market Intent, Colors, Composition, Background, etc.).
 Execute Multi-Pass StockAI Intelligence Analysis:
-1. VISION ANALYSIS: Analyze primary subject, visual style, composition, color palette, lighting, objects, industry, and buyer intent.
+1. DEEP VISION ANALYSIS: Analyze primary subject, visual style, composition, color palette, lighting type (e.g. golden hour, studio, natural), objects, industry, season/holiday context, mood/emotion, business use case, and commercial buyer intent score.
 ${getTitlePrompt(titleLength)}
 ${getKeywordPrompt(keywordsCount)}
 ${getCategoryPrompt(marketplaceRule.categories)}
@@ -138,11 +138,16 @@ Return output strictly in valid JSON format matching:
     "backgroundType": "string",
     "fileFormat": "string",
     "isTransparent": false,
-    "isCollection": false
+    "isCollection": false,
+    "seasonHoliday": "string",
+    "moodEmotion": "string",
+    "businessUseCase": "string",
+    "lightingType": "string",
+    "commercialIntentScore": 0
   }
 }`;
 
-    const userPrompt = `Analyze this ${fileType || 'asset'} for ${marketplaceRule.name}. Provide Shared Context, 8-12 word title, and exactly ${keywordsCount} keywords sorted by priority.`;
+    const userPrompt = `Analyze this ${fileType || 'asset'} for ${marketplaceRule.name}. Provide an exceptionally deep Vision Analysis Shared Context, a highly commercial 8-12 word title, an engaging description, and exactly ${keywordsCount} keywords sorted strictly by commercial priority. Maximize the commercial metadata quality.`;
 
     console.log('\n[STEP 4] Provider selection via Enterprise AI Gateway');
     let normalizedResponse;
@@ -238,8 +243,13 @@ Return output strictly in valid JSON format matching:
     // Calculate SEO Scores Deterministically
     const scores = SEOScoreEngine.calculateSEOAndQualityScores(finalTitle, cleanedKeywords, keywordBuckets, marketplaceRule, context, settings);
 
-    const primaryCategory = parsed.primaryCategory || marketplaceRule.categories[0] || 'General';
-    const secondaryCategory = parsed.secondaryCategory || marketplaceRule.categories[1] || 'Backgrounds/Textures';
+    const rawPrimary = parsed.primaryCategory || marketplaceRule.categories[0] || 'General';
+    const rawSecondary = parsed.secondaryCategory || marketplaceRule.categories[1] || 'Backgrounds/Textures';
+    
+    // Utilize the Category Engine V2 for deep vision classification
+    const categoryPrediction = CategoryEngine.predictCategoryIntelligence(rawPrimary, rawSecondary, context, marketplaceRule);
+    const primaryCategory = categoryPrediction.primaryCategory;
+    const secondaryCategory = categoryPrediction.secondaryCategory;
 
     console.log('\n[STEP 14] Final metadata generated');
     const totalTime = Date.now() - startTime;
@@ -279,12 +289,74 @@ Return output strictly in valid JSON format matching:
     const cleanStyle = style || 'photorealistic studio lighting';
     const cleanMood = mood || 'clean minimal corporate';
 
+    // Attempt AI-powered prompt generation
+    try {
+      const systemInstruction = `You are StockAI's expert AI Image Prompt Engineer. Your task is to generate highly professional, commercially-optimized image prompts for stock photo and design asset generation tools (Midjourney, DALL-E 3, Flux). 
+Output must be valid JSON with these exact fields:
+{
+  "promptMidjourney": "string — a fully crafted /imagine prompt with parameters",
+  "promptDalle": "string — a detailed DALL-E 3 optimized prompt",
+  "promptFlux": "string — a Flux-model optimized prompt",
+  "styleKeywords": ["array of 5 style descriptors"],
+  "commercialConcepts": ["array of 5 commercial concepts for microstock"]
+}
+Rules: Prompts must be commercial-grade, suitable for Adobe Stock, Shutterstock and similar platforms. Include lighting type, composition style, color palette, mood. No brand names. No copyrighted styles.`;
+
+      const userPrompt = `Generate 3 professional AI image prompts for the following:
+Topic: ${cleanTopic}
+Visual Style: ${cleanStyle}
+Mood/Atmosphere: ${cleanMood}
+Target: High-quality commercial microstock asset`;
+
+      const response = await AiGateway.generateVisionAnalysis({
+        provider: (options as any).provider || 'google-gemini',
+        model: undefined,
+        systemInstruction,
+        userPrompt,
+        base64Image: undefined,
+        mimeType: 'image/jpeg',
+        customApiKey,
+        developerMode: false,
+        responseSchema: {
+          type: 'OBJECT',
+          properties: {
+            promptMidjourney: { type: 'STRING' },
+            promptDalle: { type: 'STRING' },
+            promptFlux: { type: 'STRING' },
+            styleKeywords: { type: 'ARRAY', items: { type: 'STRING' } },
+            commercialConcepts: { type: 'ARRAY', items: { type: 'STRING' } }
+          },
+          required: ['promptMidjourney', 'promptDalle', 'promptFlux', 'styleKeywords', 'commercialConcepts']
+        }
+      });
+
+      const parsed = response.parsedResponse;
+      if (parsed && parsed.promptMidjourney) {
+        return {
+          promptMidjourney: parsed.promptMidjourney,
+          promptDalle: parsed.promptDalle,
+          promptFlux: parsed.promptFlux,
+          styleKeywords: Array.isArray(parsed.styleKeywords) ? parsed.styleKeywords : [cleanStyle, cleanMood, 'studio lighting', '8k resolution', 'stock photo'],
+          commercialConcepts: Array.isArray(parsed.commercialConcepts) ? parsed.commercialConcepts : [cleanTopic, 'business', 'technology', 'commercial design', 'microstock'],
+          aiGenerated: true,
+          provider: response.provider,
+          model: response.model
+        };
+      }
+    } catch (err: any) {
+      // Graceful fallback to template — never crash prompt generation
+      console.warn('[SeoEngine] AI prompt generation failed, using template fallback:', sanitizeErrorMessage(err?.message));
+    }
+
+    // Template fallback (always works, even without API keys)
     return {
-      promptMidjourney: `/imagine prompt: ${cleanTopic}, ${cleanStyle}, ${cleanMood}, 8k resolution, stock photo aesthetic, commercial photography, studio lighting --ar 16:9 --v 6.0 --style raw`,
-      promptDalle: `A high quality commercial stock photograph representing ${cleanTopic} in a ${cleanStyle} style with a ${cleanMood} atmosphere. Extremely crisp focus, balanced studio lighting, professional color grading, award-winning stock photography style.`,
-      promptFlux: `${cleanTopic}, ${cleanStyle}, ${cleanMood}, highly detailed, octane render texture, masterwork stock graphic asset, sharp focus, 8k wallpaper quality`,
+      promptMidjourney: `/imagine prompt: ${cleanTopic}, ${cleanStyle}, ${cleanMood}, professional commercial photography, 8k resolution, ultra sharp focus, award winning stock photo, balanced studio lighting, vibrant colors, clean background --ar 16:9 --v 6.0 --style raw --q 2`,
+      promptDalle: `A high quality commercial stock photograph representing ${cleanTopic} in a ${cleanStyle} style with a ${cleanMood} atmosphere. Professional studio lighting setup, sharp focus throughout, color-accurate rendering, clean composition optimized for microstock marketplaces.`,
+      promptFlux: `${cleanTopic}, ${cleanStyle}, ${cleanMood}, professional microstock asset, ultra-detailed octane render, pristine studio lighting, masterwork composition, sharp focus, 8k resolution, vibrant yet natural color palette, commercial photography standard`,
       styleKeywords: [cleanStyle, cleanMood, 'studio lighting', '8k resolution', 'stock photo'],
-      commercialConcepts: [cleanTopic, 'business', 'technology', 'commercial design']
+      commercialConcepts: [cleanTopic, 'business', 'technology', 'commercial design', 'microstock'],
+      aiGenerated: false,
+      provider: 'template'
     };
   }
 }

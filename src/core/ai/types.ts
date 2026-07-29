@@ -8,15 +8,25 @@ export interface AiModelDefinition {
   id: string;
   name: string;
   capabilities: AiCapabilities;
+  contextWindow?: number;
+  maxOutputTokens?: number;
+  freeTier?: boolean;
+  deprecated?: boolean;
+  tier?: 'free' | 'paid' | 'deprecated';
 }
 
+export type ProviderStatusType = 'online' | 'offline' | 'degraded' | 'rate_limited' | 'quota_exhausted' | 'no_key' | 'disabled';
+
 export interface AiProviderHealth {
-  status: 'online' | 'offline' | 'degraded';
+  status: ProviderStatusType;
   latency: number;
   lastSuccess: string | null;
   lastFailure: string | null;
   failureCount: number;
   successRate: number;
+  totalRequests?: number;
+  fallbackCount?: number;
+  recentFailures?: string[];
 }
 
 export interface NormalizedAiResponse {
@@ -29,6 +39,8 @@ export interface NormalizedAiResponse {
   rawResponse: string;
   parsedResponse?: any;
   error?: string;
+  fallbackTriggered?: boolean;
+  retries?: number;
 }
 
 export interface AiDiagnosticsData {
@@ -45,6 +57,10 @@ export interface AiDiagnosticsData {
   finishReason: string;
   success: boolean;
   error?: string;
+  fallbackTriggered?: boolean;
+  retries?: number;
+  finalProvider?: string;
+  finalModel?: string;
 }
 
 export interface GenerateVisionOptions {
@@ -57,4 +73,16 @@ export interface GenerateVisionOptions {
   responseSchema?: any;
   customApiKey?: string;
   developerMode?: boolean;
+  fallbackChain?: string[];
+  maxRetries?: number;
+  retryDelayMs?: number;
+}
+
+export interface FallbackResult {
+  provider: string;
+  model: string;
+  success: boolean;
+  response?: NormalizedAiResponse;
+  error?: string;
+  retries: number;
 }

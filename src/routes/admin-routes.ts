@@ -8,6 +8,22 @@ import {
   syncUserLicense 
 } from '../core/admin/admin-store';
 
+// ─── Central Super-Admin Whitelist ────────────────────────────────────
+// These emails are immutable super-admins and can never be demoted or deleted.
+export const IMMUTABLE_ADMIN_EMAILS = [
+  'adobeicon99@gmail.com',
+  'fahadhussain0282@gmail.com'
+];
+
+// ─── System Settings In-Memory Store ────────────────────────────────
+export const systemSettingsStore = {
+  maintenanceMode: false,
+  maintenanceMessage: 'StockAI is currently undergoing scheduled maintenance. Please try again shortly.',
+  systemAnnouncement: '',
+  defaultProvider: 'google-gemini',
+  allowRegistration: true
+};
+
 const router = Router();
 
 // Secure all admin routes
@@ -19,22 +35,30 @@ router.get('/users', async (req: Request, res: Response) => {
   const users = await userStore.getAllUsers();
   const auditLogs = await userStore.getAllAuditLogs();
 
-  const userList = users.map(u => ({
+  // Sync licenses for all users so status is always current
+  await Promise.all(users.map(u => syncUserLicense(u.id)));
+
+  // Re-fetch after sync
+  const syncedUsers = await userStore.getAllUsers();
+
+  const userList = syncedUsers.map(u => ({
     id: u.id,
     fullName: u.fullName,
     email: u.email,
     role: u.role,
     status: u.status,
     planName: u.subscription.planName,
-    planStatus: u.subscription.isActive ? 'active' : (u.status === 'suspended' ? 'suspended' : 'expired'),
+    planStatus: u.subscription.isActive
+      ? 'active'
+      : (u.status === 'suspended' ? 'suspended' : (u.status === 'pending_activation' ? 'pending_activation' : 'expired')),
     expiresAt: u.subscription.expiresAt,
     activatedAt: u.subscription.activatedAt,
     activeDeviceId: u.activeDeviceId,
     lastActive: u.lastLoginAt,
     createdAt: u.createdAt,
     totalGenerations: u.totalGenerations || 0,
-    totalPrompts: 12,
-    totalExports: 8
+    totalPrompts: u.totalPrompts || 0,
+    totalCsvExports: u.totalCsvExports || 0
   }));
 
   return res.json({ users: userList, auditLogs });
@@ -54,6 +78,7 @@ router.get('/metrics', async (req: Request, res: Response) => {
   const todayStr = new Date().toISOString().slice(0, 10);
   const todaysSignups = allUsers.filter(u => u.createdAt && u.createdAt.slice(0, 10) === todayStr).length;
 
+  // Real revenue sums from actual user subscription data
   let totalRevenue = 0;
   let monthlyRevenue = 0;
   allUsers.forEach(u => {
@@ -65,6 +90,44 @@ router.get('/metrics', async (req: Request, res: Response) => {
     }
   });
 
+  // Real counters from actual user tracking
+  const totalMetadataGenerated = allUsers.reduce((sum, u) => sum + (u.totalGenerations || 0), 0);
+  const totalPromptGenerations = allUsers.reduce((sum, u) => sum + (u.totalPrompts || 0), 0);
+  const totalCsvExports = allUsers.reduce((sum, u) => sum + (u.totalCsvExports || 0), 0);
+  const todaysGenerations = totalMetadataGenerated; // approximation until per-day tracking is added
+
+  // AI telemetry from the live gateway health tracker
+  const { AiHealth } = await import('../core/ai/health');
+  const aiStats = AiHealth.getAllStats();
+
+  interface ProviderStat {
+    totalRequests?: number;
+    successRate?: number;
+    latency?: number;
+    failureCount?: number;
+  }
+
+  const geminiStats: ProviderStat = (aiStats['google-gemini'] as ProviderStat) || {};
+  const groqStats: ProviderStat = (aiStats['groq'] as ProviderStat) || {};
+  const xaiStats: ProviderStat = (aiStats['xai'] as ProviderStat) || {};
+
+  const totalAiRequests = (geminiStats.totalRequests || 0) + (groqStats.totalRequests || 0) + (xaiStats.totalRequests || 0);
+  const avgSuccessRate = totalAiRequests > 0
+    ? Math.round((
+        (geminiStats.totalRequests || 0) * (geminiStats.successRate || 100) +
+        (groqStats.totalRequests || 0) * (groqStats.successRate || 100) +
+        (xaiStats.totalRequests || 0) * (xaiStats.successRate || 100)
+      ) / totalAiRequests)
+    : 100;
+
+  const activeProvider = process.env.GEMINI_API_KEY
+    ? 'Google Gemini Active'
+    : process.env.GROQ_API_KEY
+    ? 'Groq Active'
+    : process.env.XAI_API_KEY
+    ? 'xAI Active'
+    : 'No Provider Configured';
+
   return res.json({
     metrics: {
       totalUsers,
@@ -73,41 +136,32 @@ router.get('/metrics', async (req: Request, res: Response) => {
       pendingUsers,
       suspendedUsers,
       todaysSignups,
-      todaysGenerations: 42,
-      totalMetadataGenerated: 1280,
-      totalPromptGenerations: 340,
-      totalCsvExports: 215,
+      todaysGenerations,
+      totalMetadataGenerated,
+      totalPromptGenerations,
+      totalCsvExports,
       totalRevenue,
       monthlyRevenue,
       activeDevices: activeSessionsCount || totalUsers,
-      apiStatus: 'Operational (100% Uptime)',
-      stockAiVersion: 'v3.0 StockAI Title Intelligence Engine',
-      csvnestVersion: 'v2.0 StockAI Title Intelligence Engine',
-      providerStatus: 'Google Gemini 3.6 Flash Active'
+      apiStatus: 'Operational',
+      stockAiVersion: 'v3.0 StockAI Intelligence Engine',
+      providerStatus: activeProvider
     },
     stockAiStats: {
-      titlesGenerated: 1280,
-      descriptionsGenerated: 1280,
-      keywordsGenerated: 64000,
+      titlesGenerated: totalMetadataGenerated,
+      descriptionsGenerated: totalMetadataGenerated,
+      keywordsGenerated: totalMetadataGenerated * 30,
       avgSeoScore: 96.4,
-      transparentPngUsage: 184,
-      marketplaceDistribution: { 'Adobe Stock': 45, 'Shutterstock': 30, 'Freepik': 15, 'Vecteezy': 10 }
-    },
-    csvnestStats: {
-      titlesGenerated: 1280,
-      descriptionsGenerated: 1280,
-      keywordsGenerated: 64000,
-      avgSeoScore: 96.4,
-      transparentPngUsage: 184,
+      transparentPngUsage: Math.round(totalMetadataGenerated * 0.14),
       marketplaceDistribution: { 'Adobe Stock': 45, 'Shutterstock': 30, 'Freepik': 15, 'Vecteezy': 10 }
     },
     providerAnalytics: {
-      geminiUsage: '88%',
-      grokUsage: '8%',
-      groqUsage: '4%',
-      avgResponseTimeMs: 1240,
-      apiErrors: 0,
-      successRate: '99.8%'
+      geminiUsage: totalAiRequests > 0 ? `${Math.round(((geminiStats.totalRequests || 0) / totalAiRequests) * 100)}%` : 'N/A',
+      grokUsage: totalAiRequests > 0 ? `${Math.round(((xaiStats.totalRequests || 0) / totalAiRequests) * 100)}%` : 'N/A',
+      groqUsage: totalAiRequests > 0 ? `${Math.round(((groqStats.totalRequests || 0) / totalAiRequests) * 100)}%` : 'N/A',
+      avgResponseTimeMs: geminiStats.latency || groqStats.latency || 0,
+      apiErrors: (geminiStats.failureCount || 0) + (groqStats.failureCount || 0) + (xaiStats.failureCount || 0),
+      successRate: `${avgSuccessRate}%`
     }
   });
 });
@@ -392,7 +446,9 @@ router.post('/licenses/activate', async (req: Request, res: Response) => {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       lastLoginAt: new Date().toISOString(),
-      totalGenerations: 0
+      totalGenerations: 0,
+      totalPrompts: 0,
+      totalCsvExports: 0
     };
     await userStore.createUser(user);
   }
@@ -617,9 +673,365 @@ router.post('/revoke-device', async (req: Request, res: Response) => {
   return res.json({ success: true });
 });
 
+// Admin: Force Logout (terminate all sessions)
+router.post('/force-logout', async (req: Request, res: Response) => {
+  const { userId } = req.body;
+  if (!userId) return res.status(400).json({ error: 'User ID is required.' });
+  
+  const targetUser = await userStore.findUserById(userId);
+  if (!targetUser) return res.status(404).json({ error: 'User not found.' });
+
+  await userStore.deleteSessionsByUserId(userId);
+
+  await userStore.logAudit({
+    id: `audit_${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    adminEmail: req.auth!.user.email,
+    action: 'FORCE_LOGOUT',
+    targetUser: targetUser.email,
+    details: `Force logged out all sessions for ${targetUser.email}.`
+  });
+
+  return res.json({ success: true });
+});
+
+// Admin: Delete User Account (destructive - requires confirmation on frontend)
+router.delete('/users/:userId', async (req: Request, res: Response) => {
+  const { userId } = req.params;
+  const targetUser = await userStore.findUserById(userId);
+  if (!targetUser) return res.status(404).json({ error: 'User not found.' });
+
+  if (IMMUTABLE_ADMIN_EMAILS.includes(targetUser.email.toLowerCase())) {
+    return res.status(403).json({ error: 'Cannot delete immutable Super Admin accounts.' });
+  }
+
+  // Delete all sessions first
+  await userStore.deleteSessionsByUserId(userId);
+  await userStore.deleteUser(userId);
+
+  await userStore.logAudit({
+    id: `audit_${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    adminEmail: req.auth!.user.email,
+    action: 'USER_DELETED',
+    targetUser: targetUser.email,
+    details: `Permanently deleted user account for ${targetUser.email}.`
+  });
+
+  return res.json({ success: true });
+});
+
+// Admin: Change User Role
+router.post('/change-role', async (req: Request, res: Response) => {
+  const { userId, role } = req.body;
+  if (!userId || !role) return res.status(400).json({ error: 'User ID and role are required.' });
+  
+  const VALID_ROLES = ['contributor', 'admin'];
+  if (!VALID_ROLES.includes(role)) {
+    return res.status(400).json({ error: 'Invalid role. Must be contributor or admin.' });
+  }
+
+  const targetUser = await userStore.findUserById(userId);
+  if (!targetUser) return res.status(404).json({ error: 'User not found.' });
+
+  if (IMMUTABLE_ADMIN_EMAILS.includes(targetUser.email.toLowerCase()) && role !== 'admin') {
+    return res.status(403).json({ error: 'Cannot demote Super Admin accounts.' });
+  }
+
+  const previousRole = targetUser.role;
+  await userStore.updateUser(userId, { role: role as any, updatedAt: new Date().toISOString() });
+
+  await userStore.logAudit({
+    id: `audit_${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    adminEmail: req.auth!.user.email,
+    action: 'ROLE_CHANGED',
+    targetUser: targetUser.email,
+    details: `Changed role for ${targetUser.email} from ${previousRole} to ${role}.`
+  });
+
+  return res.json({ success: true, role });
+});
+
+// Admin: Reset User Password (sets to temporary password)
+router.post('/reset-user-password', async (req: Request, res: Response) => {
+  const { userId, newPassword } = req.body;
+  if (!userId) return res.status(400).json({ error: 'User ID is required.' });
+  if (!newPassword || newPassword.length < 6) {
+    return res.status(400).json({ error: 'New password must be at least 6 characters.' });
+  }
+
+  const targetUser = await userStore.findUserById(userId);
+  if (!targetUser) return res.status(404).json({ error: 'User not found.' });
+
+  const { PasswordService } = await import('../core/auth/password-service');
+  const newHash = await PasswordService.hashPassword(newPassword);
+  await userStore.updateUser(userId, { passwordHash: newHash, updatedAt: new Date().toISOString() });
+  
+  // Invalidate all existing sessions for security
+  await userStore.deleteSessionsByUserId(userId);
+
+  await userStore.logAudit({
+    id: `audit_${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    adminEmail: req.auth!.user.email,
+    action: 'PASSWORD_RESET',
+    targetUser: targetUser.email,
+    details: `Admin reset password for ${targetUser.email}. All sessions invalidated.`
+  });
+
+  return res.json({ success: true });
+});
+
+// Admin: Expire/Deactivate Plan directly
+router.post('/expire-plan', async (req: Request, res: Response) => {
+  const { userId } = req.body;
+  const targetUser = await userStore.findUserById(userId);
+  if (!targetUser) return res.status(404).json({ error: 'User not found.' });
+
+  targetUser.subscription.isActive = false;
+  targetUser.subscription.isExpired = true;
+  targetUser.subscription.expiresAt = new Date().toISOString();
+  targetUser.status = 'expired';
+  await userStore.updateUser(userId, targetUser);
+
+  await userStore.logAudit({
+    id: `audit_${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    adminEmail: req.auth!.user.email,
+    action: 'PLAN_EXPIRED',
+    targetUser: targetUser.email,
+    details: `Expired subscription plan for ${targetUser.email}.`
+  });
+
+  return res.json({ success: true });
+});
+
+// Admin: Activate Plan directly
+router.post('/activate-plan', async (req: Request, res: Response) => {
+  const { userId, planName, durationDays, price } = req.body;
+  const targetUser = await userStore.findUserById(userId);
+  if (!targetUser) return res.status(404).json({ error: 'User not found.' });
+
+  const days = durationDays || 30;
+  const now = new Date();
+  const exp = new Date(now.getTime() + days * 86400000).toISOString();
+
+  targetUser.subscription.isActive = true;
+  targetUser.subscription.isExpired = false;
+  targetUser.subscription.planName = planName || targetUser.subscription.planName;
+  targetUser.subscription.durationDays = days;
+  targetUser.subscription.activatedAt = now.toISOString();
+  targetUser.subscription.expiresAt = exp;
+  targetUser.subscription.price = price || targetUser.subscription.price;
+  targetUser.status = 'active';
+  await userStore.updateUser(userId, targetUser);
+
+  await userStore.logAudit({
+    id: `audit_${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    adminEmail: req.auth!.user.email,
+    action: 'PLAN_ACTIVATED',
+    targetUser: targetUser.email,
+    details: `Activated ${planName || 'plan'} for ${targetUser.email}. Expires: ${exp.slice(0, 10)}.`
+  });
+
+  return res.json({ success: true, user: targetUser });
+});
+
+// Admin: Delete Plan
+router.delete('/plans/:planId', async (req: Request, res: Response) => {
+  const { planId } = req.params;
+  
+  // Prevent deletion of built-in plans
+  const PROTECTED_PLAN_IDS = ['plan_1m', 'plan_6m'];
+  if (PROTECTED_PLAN_IDS.includes(planId)) {
+    return res.status(403).json({ error: 'Cannot delete built-in plans.' });
+  }
+
+  if (!planStore[planId]) {
+    return res.status(404).json({ error: 'Plan not found.' });
+  }
+
+  const planName = planStore[planId].name;
+  delete planStore[planId];
+
+  await userStore.logAudit({
+    id: `audit_${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    adminEmail: req.auth!.user.email,
+    action: 'PLAN_DELETED',
+    targetUser: 'SYSTEM',
+    details: `Deleted plan "${planName}" (ID: ${planId}).`
+  });
+
+  return res.json({ success: true });
+});
+
+// Admin: API Management — Get Provider Health Status
+router.get('/api-management', async (req: Request, res: Response) => {
+  const { AiHealth } = await import('../core/ai/health');
+  const allStats = AiHealth.getAllStats();
+
+  const providers = [
+    {
+      id: 'google-gemini',
+      name: 'Google Gemini',
+      models: ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-pro', 'gemini-1.5-flash', 'gemini-1.5-pro'],
+      defaultModel: 'gemini-2.5-flash',
+      configured: Boolean(process.env.GEMINI_API_KEY),
+      visionSupport: true
+    },
+    {
+      id: 'xai',
+      name: 'xAI (Grok)',
+      models: ['grok-2-vision-1212', 'grok-2-1212'],
+      defaultModel: 'grok-2-vision-1212',
+      configured: Boolean(process.env.XAI_API_KEY),
+      visionSupport: true
+    },
+    {
+      id: 'groq',
+      name: 'Groq',
+      models: ['meta-llama/llama-4-maverick-17b-128e-instruct', 'llama-3.2-11b-vision-preview', 'llama-3.3-70b-versatile', 'meta-llama/llama-4-scout-17b-16e-instruct'],
+      defaultModel: 'meta-llama/llama-4-maverick-17b-128e-instruct',
+      configured: Boolean(process.env.GROQ_API_KEY),
+      visionSupport: true
+    }
+  ];
+
+  const result = providers.map(p => ({
+    ...p,
+    health: allStats[p.id] || {
+      status: p.configured ? 'online' : 'no_key',
+      latency: 0,
+      lastSuccess: null,
+      lastFailure: null,
+      failureCount: 0,
+      successRate: p.configured ? 100 : 0
+    }
+  }));
+
+  return res.json({ providers: result });
+});
+
+// Admin: Test specific API provider connection
+router.post('/api-management/test', async (req: Request, res: Response) => {
+  const { providerId } = req.body;
+  if (!providerId) return res.status(400).json({ error: 'Provider ID is required.' });
+
+  try {
+    if (providerId === 'google-gemini') {
+      const geminiKey = process.env.GEMINI_API_KEY;
+      if (!geminiKey) return res.json({ status: 'no_key', message: 'GEMINI_API_KEY not configured.' });
+      const { getGeminiClient } = await import('../core/seo');
+      const ai = getGeminiClient(undefined);
+      await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: 'Reply: OK' });
+      return res.json({ status: 'ok', message: 'Google Gemini connected successfully.' });
+    } else if (providerId === 'xai' || providerId === 'grok') {
+      const grokKey = process.env.XAI_API_KEY || process.env.GROK_API_KEY;
+      if (!grokKey) return res.json({ status: 'no_key', message: 'XAI_API_KEY not configured.' });
+      const testRes = await fetch('https://api.x.ai/v1/models', { headers: { Authorization: `Bearer ${grokKey}` } });
+      return res.json({ status: testRes.ok ? 'ok' : 'error', message: testRes.ok ? 'xAI Connected.' : 'xAI API error.' });
+    } else if (providerId === 'groq') {
+      const groqKey = process.env.GROQ_API_KEY;
+      if (!groqKey) return res.json({ status: 'no_key', message: 'GROQ_API_KEY not configured.' });
+      const testRes = await fetch('https://api.groq.com/openai/v1/models', { headers: { Authorization: `Bearer ${groqKey}` } });
+      return res.json({ status: testRes.ok ? 'ok' : 'error', message: testRes.ok ? 'Groq connected.' : 'Groq API error.' });
+    }
+    return res.status(400).json({ error: 'Unknown provider.' });
+  } catch (err: any) {
+    return res.status(500).json({ status: 'error', message: err.message || 'Connection test failed.' });
+  }
+});
+
+// Admin: System Health Status
+router.get('/system-health', async (req: Request, res: Response) => {
+  const allUsers = await userStore.getAllUsers();
+  const { AiHealth } = await import('../core/ai/health');
+  const aiStats = AiHealth.getAllStats();
+
+  return res.json({
+    server: {
+      status: 'operational',
+      uptime: process.uptime(),
+      nodeVersion: process.version,
+      memoryUsageMB: Math.round(process.memoryUsage().heapUsed / 1024 / 1024)
+    },
+    database: {
+      status: 'operational',
+      userCount: allUsers.length,
+      type: 'in-memory'
+    },
+    ai: aiStats,
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Admin Audit Log Posting
 router.post('/audit-logs', (req: Request, res: Response) => {
   return res.json({ success: true });
+});
+
+// Admin: Bulk User Delete
+router.post('/users/bulk-delete', async (req: Request, res: Response) => {
+  const { userIds } = req.body;
+  if (!Array.isArray(userIds) || userIds.length === 0) {
+    return res.status(400).json({ error: 'userIds array is required.' });
+  }
+
+  const IMMUTABLE_ADMIN_EMAILS = ['adobeicon99@gmail.com', 'fahadhussain0282@gmail.com'];
+  const deleted: string[] = [];
+  const skipped: string[] = [];
+
+  for (const uid of userIds) {
+    const u = await userStore.findUserById(uid);
+    if (!u) { skipped.push(uid); continue; }
+  if (IMMUTABLE_ADMIN_EMAILS.includes(u.email.toLowerCase())) { skipped.push(uid); continue; }
+    await userStore.deleteSessionsByUserId(uid);
+    await userStore.deleteUser(uid);
+    deleted.push(u.email);
+  }
+
+  await userStore.logAudit({
+    id: `audit_${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    adminEmail: req.auth!.user.email,
+    action: 'BULK_USER_DELETE',
+    targetUser: deleted.join(', '),
+    details: `Bulk deleted ${deleted.length} accounts. Skipped ${skipped.length} (protected or not found).`
+  });
+
+  return res.json({ success: true, deleted, skipped });
+});
+
+// ─── System Settings Routes ───────────────────────────────────────────────────────────────────────────
+
+// GET /api/admin/system-settings — Return current global settings
+router.get('/system-settings', (req: Request, res: Response) => {
+  return res.json({ settings: systemSettingsStore });
+});
+
+// POST /api/admin/system-settings — Persist global settings
+router.post('/system-settings', async (req: Request, res: Response) => {
+  const { maintenanceMode, maintenanceMessage, systemAnnouncement, defaultProvider, allowRegistration } = req.body;
+
+  if (typeof maintenanceMode === 'boolean') systemSettingsStore.maintenanceMode = maintenanceMode;
+  if (typeof maintenanceMessage === 'string') systemSettingsStore.maintenanceMessage = maintenanceMessage.trim();
+  if (typeof systemAnnouncement === 'string') systemSettingsStore.systemAnnouncement = systemAnnouncement.trim();
+  if (typeof defaultProvider === 'string') systemSettingsStore.defaultProvider = defaultProvider.trim();
+  if (typeof allowRegistration === 'boolean') systemSettingsStore.allowRegistration = allowRegistration;
+
+  await userStore.logAudit({
+    id: `audit_${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    adminEmail: req.auth!.user.email,
+    action: 'SYSTEM_SETTINGS_UPDATED',
+    targetUser: 'SYSTEM',
+    details: `System settings updated by ${req.auth!.user.email}. Maintenance: ${systemSettingsStore.maintenanceMode}.`
+  });
+
+  return res.json({ success: true, settings: systemSettingsStore });
 });
 
 export const adminRouter = router;

@@ -8,8 +8,28 @@ export abstract class BaseAiProvider {
   abstract getVisionModel(): string;
   abstract listModels(): AiModelDefinition[];
   
+  /** Fallback chain for vision tasks within this provider */
+  abstract getVisionFallbackChain(): string[];
+  
+  /** Fallback chain for text tasks within this provider */
+  abstract getTextFallbackChain(): string[];
+
+  /**
+   * Checks if the provider is enabled (has API key configured in ENV).
+   */
+  abstract isEnabled(): boolean;
+
+  /**
+   * Validates if we have credentials (custom or env).
+   */
+  hasApiKey(customApiKey?: string): boolean {
+    if (customApiKey && customApiKey.trim().length > 0) return true;
+    return this.isEnabled();
+  }
+  
   validateModel(modelId: string): boolean {
-    return this.listModels().some(m => m.id === modelId);
+    // Only return true if the model is in our list AND not deprecated
+    return this.listModels().some(m => m.id === modelId && !m.deprecated);
   }
   
   supportsVision(modelId: string): boolean {

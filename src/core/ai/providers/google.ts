@@ -1,22 +1,35 @@
 import { BaseAiProvider } from './base-provider';
 import { AiModelDefinition, GenerateVisionOptions, NormalizedAiResponse } from '../types';
-import { GOOGLE_MODELS } from '../models/google-models';
+import { GOOGLE_MODELS, GOOGLE_VISION_FALLBACK_CHAIN, GOOGLE_DEFAULT_VISION_MODEL, GOOGLE_DEFAULT_TEXT_MODEL } from '../models/google-models';
 import { GoogleGenAI, Type } from '@google/genai';
 
 export class GoogleProvider extends BaseAiProvider {
   readonly id = 'google-gemini';
   readonly name = 'Google Gemini';
 
+  isEnabled(): boolean {
+    const key = process.env.GEMINI_API_KEY;
+    return !!key && key.trim().length > 0;
+  }
+
   getDefaultModel(): string {
-    return 'gemini-2.5-flash';
+    return GOOGLE_DEFAULT_TEXT_MODEL;
   }
 
   getVisionModel(): string {
-    return 'gemini-2.5-flash';
+    return GOOGLE_DEFAULT_VISION_MODEL;
   }
 
   listModels(): AiModelDefinition[] {
     return GOOGLE_MODELS;
+  }
+
+  getVisionFallbackChain(): string[] {
+    return GOOGLE_VISION_FALLBACK_CHAIN;
+  }
+
+  getTextFallbackChain(): string[] {
+    return [GOOGLE_DEFAULT_TEXT_MODEL, ...GOOGLE_VISION_FALLBACK_CHAIN];
   }
 
   async generateVisionAnalysis(options: GenerateVisionOptions): Promise<NormalizedAiResponse> {
@@ -25,13 +38,15 @@ export class GoogleProvider extends BaseAiProvider {
       : process.env.GEMINI_API_KEY;
       
     if (!key || key.trim().length === 0) {
-      throw new Error('GEMINI_API_KEY is not configured or invalid.');
+      throw new Error('AUTH_ERROR: GEMINI_API_KEY is not configured or invalid.');
     }
 
     const ai = new GoogleGenAI({
       apiKey: key,
-      httpOptions: { headers: { 'User-Agent': 'stockai-gateway' } }
+      httpOptions: { headers: { 'User-Agent': 'stockai-gateway/3.0' } }
     });
+
+    const REQUEST_TIMEOUT_MS = 25000;
 
     const modelToUse = options.model || this.getVisionModel();
     if (!this.supportsVision(modelToUse) && options.base64Image) {
@@ -97,7 +112,14 @@ export class GoogleProvider extends BaseAiProvider {
       }
 
     } catch (err: any) {
-      throw new Error(`Google API Failed: ${err.message}`);
+      const errMsg: string = err.message || 'Unknown error';
+      if (errMsg.includes('API_KEY_INVALID') || errMsg.includes('INVALID_ARGUMENT') || errMsg.includes('401') || errMsg.includes('403')) {
+        throw new Error(`AUTH_ERROR: Google Gemini API key is invalid or unauthorized. ${errMsg}`);
+      }
+      if (errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('429')) {
+        throw new Error(`RATE_LIMIT: Google Gemini rate limit reached. ${errMsg}`);
+      }
+      throw new Error(`Google API Failed: ${errMsg}`);
     }
 
     return {
