@@ -1,10 +1,12 @@
 /**
  * StockAI v3.0 Enterprise — Prisma Database Client
  *
- * Provides a singleton PrismaClient instance configured for:
- *  - Neon serverless (WebSocket-based HTTP transport for Vercel)
- *  - Standard PostgreSQL (local dev, traditional hosting)
- *  - Graceful degradation when DATABASE_URL is not configured
+ * Configured for Supabase PostgreSQL using @prisma/adapter-pg.
+ * Uses a connection pool so serverless functions share connections.
+ *
+ * Priority:
+ *  1. DATABASE_URL set → PostgreSQL via pg pool (production)
+ *  2. DATABASE_URL not set → in-memory fallback (development without DB)
  *
  * Usage: import { db, isDbAvailable } from './client'
  */
@@ -35,7 +37,7 @@ export async function initDb(): Promise<void> {
       '\n⚠️  [StockAI DB] DATABASE_URL is not set.\n' +
       '   The application will use an in-memory fallback store.\n' +
       '   Data will NOT persist across server restarts.\n' +
-      '   For production: add DATABASE_URL to .env (PostgreSQL/Neon connection string)\n'
+      '   For production: add DATABASE_URL to .env (Supabase PostgreSQL connection string)\n'
     );
     _dbAvailable = false;
     return;
@@ -50,7 +52,25 @@ export async function initDb(): Promise<void> {
       return;
     }
 
+    // ─── pg Pool + @prisma/adapter-pg (Supabase/standard PostgreSQL) ──────────
+    const { Pool } = await import('pg');
+    const { PrismaPg } = await import('@prisma/adapter-pg');
+
+    const pool = new Pool({
+      connectionString: DATABASE_URL,
+      ssl: {
+        // Supabase requires SSL; rejectUnauthorized: false for self-signed certs
+        rejectUnauthorized: false
+      },
+      max: process.env.NODE_ENV === 'production' ? 3 : 10, // Limit for serverless
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000,
+    });
+
+    const adapter = new PrismaPg(pool);
+
     const client = new PrismaClient({
+      adapter,
       log: process.env.NODE_ENV === 'development'
         ? ['warn', 'error']
         : ['error'],
@@ -67,10 +87,10 @@ export async function initDb(): Promise<void> {
       global.__prisma = client;
     }
 
-    console.log('[StockAI DB] ✅ PostgreSQL connected successfully');
+    console.log('[StockAI DB] ✅ Supabase PostgreSQL connected successfully');
   } catch (err: any) {
     console.error('[StockAI DB] ❌ Database connection failed:', err?.message);
-    console.warn('[StockAI DB] Falling back to in-memory store. Check DATABASE_URL.');
+    console.warn('[StockAI DB] Falling back to in-memory store. Check DATABASE_URL and Supabase network settings.');
     _db = null;
     _dbAvailable = false;
   }
@@ -78,7 +98,6 @@ export async function initDb(): Promise<void> {
 
 /**
  * Returns the Prisma client instance (or null if DB not available).
- * Always check `isDbAvailable()` before using.
  */
 export function getDb(): PrismaClient | null {
   return _db;

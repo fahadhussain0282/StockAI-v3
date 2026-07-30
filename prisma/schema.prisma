@@ -1,9 +1,10 @@
 // StockAI v3.0 Enterprise — Prisma Database Schema
-// Database: PostgreSQL (Neon serverless-compatible)
-// ORM: Prisma
+// Database: Supabase PostgreSQL
+// ORM: Prisma v7
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
 }
 
 datasource db {
