@@ -1038,6 +1038,8 @@ router.post('/key-pool/:provider', async (req: Request, res: Response) => {
   }
   try {
     const added = ApiKeyManager.addKey(provider, key.trim(), label || undefined);
+    // Persist to database immediately
+    ApiKeyManager.persistKeyToDb(added).catch(() => {});
     await userStore.logAudit({
       id: `audit_${Date.now()}`,
       timestamp: new Date().toISOString(),
@@ -1061,6 +1063,8 @@ router.put('/key-pool/key/:keyId', async (req: Request, res: Response) => {
   const { label, key, isEnabled } = req.body;
   const updated = ApiKeyManager.editKey(keyId, { label, key: key?.trim(), isEnabled });
   if (!updated) return res.status(404).json({ error: 'Key not found.' });
+  // Persist to DB
+  ApiKeyManager.persistKeyToDb(updated).catch(() => {});
   const { key: _rawKey, ...safe } = updated;
   return res.json({ success: true, key: safe });
 });
@@ -1071,6 +1075,8 @@ router.delete('/key-pool/key/:keyId', async (req: Request, res: Response) => {
   const { keyId } = req.params;
   const deleted = ApiKeyManager.deleteKey(keyId);
   if (!deleted) return res.status(404).json({ error: 'Key not found.' });
+  // Remove from DB
+  ApiKeyManager.deleteKeyFromDb(keyId).catch(() => {});
   await userStore.logAudit({
     id: `audit_${Date.now()}`,
     timestamp: new Date().toISOString(),

@@ -70,7 +70,7 @@ export class AuthService {
 
     await userStore.createUser(newUser);
     
-    const token = await SessionService.createSession(userId, deviceId);
+    const token = await SessionService.createSession(userId, deviceId, newUser.email, newUser.role);
 
     return { user: newUser, token };
   }
@@ -91,7 +91,7 @@ export class AuthService {
 
     // Generate new session (this invalidates old sessions automatically via SessionService)
     const newDeviceId = clientDeviceId || `dev_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-    const token = await SessionService.createSession(user.id, newDeviceId);
+    const token = await SessionService.createSession(user.id, newDeviceId, user.email, user.role);
 
     user.lastLoginAt = new Date().toISOString();
     user.updatedAt = new Date().toISOString();
@@ -163,7 +163,7 @@ export class AuthService {
       });
     }
 
-    const token = await SessionService.createSession(user.id, newDeviceId);
+    const token = await SessionService.createSession(user.id, newDeviceId, user.email, user.role);
     return { user, token };
   }
 }

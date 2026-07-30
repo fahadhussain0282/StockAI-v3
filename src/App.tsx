@@ -45,6 +45,7 @@ export default function App() {
   // Auth & Session State
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
+  const [authInitError, setAuthInitError] = useState<string | null>(null);
   const [authToken, setAuthToken] = useState<string>(() => localStorage.getItem('stockai_auth_token') || '');
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isLockedExperienceOpen, setIsLockedExperienceOpen] = useState(false);
@@ -61,39 +62,71 @@ export default function App() {
 
   // Fetch Current Auth User on Startup — Session Persistence
   useEffect(() => {
-    if (authToken) {
-      fetch('/api/auth/me', {
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-          'X-Device-Id': deviceId
-        }
-      })
-      .then(res => {
-        if (!res.ok) throw new Error('Session invalidated');
-        return res.json();
-      })
-      .then(data => {
-        if (data.user) {
-          setCurrentUser(data.user);
-          setSubscription(data.user.subscription);
-          // Auto-restore admin route: if user is admin and on root, redirect to /admin
-          if (data.user.role === 'admin' && window.location.pathname === '/') {
-            window.history.replaceState({}, '', '/admin');
-            setRoutePath('/admin');
-          }
-        }
-        setIsInitializing(false);
-      })
-      .catch(() => {
-        setCurrentUser(null);
-        setAuthToken('');
-        localStorage.removeItem('stockai_auth_token');
-        setIsInitializing(false);
-      });
-    } else {
+    if (!authToken) {
       setCurrentUser(null);
       setIsInitializing(false);
+      return;
     }
+
+    let cancelled = false;
+    const TIMEOUT_MS = 8000; // 8s timeout to prevent infinite loading
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, TIMEOUT_MS);
+
+    fetch('/api/auth/me', {
+      headers: {
+        'Authorization': `Bearer ${authToken}`,
+        'X-Device-Id': deviceId
+      },
+      signal: controller.signal
+    })
+    .then(res => {
+      if (!res.ok) throw new Error(`Session invalidated (${res.status})`);
+      return res.json();
+    })
+    .then(data => {
+      if (cancelled) return;
+      clearTimeout(timeoutId);
+      if (data.user) {
+        setCurrentUser(data.user);
+        setSubscription(data.user.subscription);
+        setAuthInitError(null);
+        // Defer admin redirect until after initialization is complete
+        if (data.user.role === 'admin' && window.location.pathname === '/') {
+          setTimeout(() => {
+            window.history.replaceState({}, '', '/admin');
+            setRoutePath('/admin');
+          }, 0);
+        }
+      }
+      setIsInitializing(false);
+    })
+    .catch((err) => {
+      if (cancelled) return;
+      clearTimeout(timeoutId);
+      const isTimeout = err?.name === 'AbortError';
+      if (isTimeout) {
+        // Network timeout — do NOT clear the token, allow retry
+        console.warn('[StockAI] Session restore timed out. Allowing retry...');
+        setAuthInitError('Connection timed out. Please check your connection and retry.');
+        setIsInitializing(false);
+        return;
+      }
+      // Genuine session invalidation — clear token
+      setCurrentUser(null);
+      setAuthToken('');
+      localStorage.removeItem('stockai_auth_token');
+      setAuthInitError(null);
+      setIsInitializing(false);
+    });
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
   }, [authToken, deviceId]);
 
   // Subscription State (Default: Inactive for new users)
@@ -673,8 +706,37 @@ export default function App() {
 
   if (isInitializing) {
     return (
-      <div className="h-screen w-screen flex items-center justify-center bg-[#0c0c0e] text-white">
+      <div className="h-screen w-screen flex items-center justify-center bg-[#0c0c0e] text-white flex-col gap-4">
         <div className="w-10 h-10 border-4 border-zinc-800 border-t-white rounded-full animate-spin"></div>
+        <p className="text-zinc-400 text-sm">Restoring session...</p>
+        {authInitError && (
+          <div className="mt-4 text-center">
+            <p className="text-red-400 text-sm mb-3">{authInitError}</p>
+            <button
+              onClick={() => {
+                setAuthInitError(null);
+                setIsInitializing(true);
+                // Re-trigger session restore
+                setAuthToken(t => t);
+              }}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm transition-colors"
+            >
+              Retry Connection
+            </button>
+            <button
+              onClick={() => {
+                setCurrentUser(null);
+                setAuthToken('');
+                localStorage.removeItem('stockai_auth_token');
+                setAuthInitError(null);
+                setIsInitializing(false);
+              }}
+              className="ml-3 px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg text-sm transition-colors"
+            >
+              Sign In Again
+            </button>
+          </div>
+        )}
       </div>
     );
   }

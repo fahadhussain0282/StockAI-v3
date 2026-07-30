@@ -10,12 +10,94 @@ import { billingRouter } from './src/core/billing';
 import { adminRouter, systemSettingsStore } from './src/routes/admin-routes';
 import { aiRouter } from './src/routes/ai-routes';
 import { ApiKeyManager } from './src/core/ai/api-key-manager';
+import { initDb, isDbAvailable } from './src/core/db/client';
+import { userStore } from './src/core/auth/user-store';
 
 dotenv.config();
 
+// ─── Startup Validation ───────────────────────────────────────────────────────
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.trim().length < 32) {
+  console.warn(
+    '\n⚠️  [StockAI] JWT_SECRET is not set or too short.\n' +
+    '   Users will be logged out on every server restart.\n' +
+    '   For production: generate with:\n' +
+    '   node -e "console.log(require(\"crypto\").randomBytes(32).toString(\"hex\"))"\n' +
+    '   and add JWT_SECRET=<result> to your .env and Vercel env vars.\n'
+  );
+}
+
+// ─── Initialize Database Connection ──────────────────────────────────────────
+// This is async but we don't await at module level — requests will use
+// in-memory fallback until DB is ready (usually < 1s)
+initDb().then(async () => {
+  if (isDbAvailable()) {
+    console.log('[StockAI] Database ready — seeding admin users...');
+    await seedAdminUsers();
+    console.log('[StockAI] Admin seed complete.');
+    // Load persisted API keys from DB into memory pool
+    await ApiKeyManager.loadFromDb();
+    console.log('[StockAI] API key pool restored from database.');
+  }
+  // Seed API key pool from environment variables (adds ENV keys as fallback)
+  ApiKeyManager.seedFromEnvironment();
+}).catch(err => {
+  console.error('[StockAI] DB init error:', err?.message);
+  // Still seed API keys even if DB fails
+  ApiKeyManager.seedFromEnvironment();
+});
+
+// ─── Seed Admin Users to Database ────────────────────────────────────────────
+async function seedAdminUsers() {
+  const ADMIN_EMAILS = [
+    { email: 'fahadhussain0282@gmail.com', fullName: 'Fahad Hussain',      passwordHash: 'legacy:admin_seed_1', plan: '1 Month Plan', days: 30,  price: 300 },
+    { email: 'adobeicon99@gmail.com',      fullName: 'Adobe Icon Studio',  passwordHash: 'legacy:admin_seed_2', plan: '6 Months Plan', days: 180, price: 2000 },
+  ];
+  for (const a of ADMIN_EMAILS) {
+    try {
+      const existing = await userStore.findUserByEmail(a.email);
+      if (!existing) {
+        const now = new Date().toISOString();
+        await userStore.createUser({
+          id: `usr_admin_${a.email.split('@')[0].replace(/[^a-z0-9]/g, '')}`,
+          fullName: a.fullName,
+          email: a.email,
+          passwordHash: a.passwordHash,
+          provider: 'local',
+          role: 'admin',
+          status: 'active',
+          subscription: {
+            planId: a.days >= 180 ? 'plan_6m' : 'plan_1m',
+            planName: a.plan,
+            price: a.price,
+            durationDays: a.days,
+            activatedAt: now,
+            expiresAt: new Date(Date.now() + a.days * 86400000).toISOString(),
+            isActive: true,
+            isExpired: false,
+            deviceId: 'dev_admin'
+          },
+          activeDeviceId: 'dev_admin',
+          createdAt: now,
+          updatedAt: now,
+          lastLoginAt: now,
+          totalGenerations: 0,
+          totalPrompts: 0,
+          totalCsvExports: 0
+        });
+        console.log(`[StockAI] Admin seeded: ${a.email}`);
+      }
+    } catch (err: any) {
+      // Ignore duplicate — admin already exists in DB
+      if (!err?.message?.includes('already exists')) {
+        console.warn(`[StockAI] Admin seed warning (${a.email}):`, err?.message);
+      }
+    }
+  }
+}
+
 // ─── Seed Enterprise API Key Pool from Environment Variables ─────────────────
-// This runs before any request, ensuring all ENV keys are in the pool at startup
-ApiKeyManager.seedFromEnvironment();
+// NOTE: Also called above after DB init — this is the synchronous fallback
+// for cases where the server starts before DB init completes
 
 // ─── Global Stability: Unhandled Rejections + Exceptions ─────────────────────
 process.on('unhandledRejection', (reason: any) => {

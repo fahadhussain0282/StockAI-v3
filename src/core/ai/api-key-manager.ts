@@ -14,6 +14,7 @@
  */
 
 import crypto from 'crypto';
+import { getDb, isDbAvailable } from '../db/client';
 
 // ─── Encryption Layer ─────────────────────────────────────────────────────────
 
@@ -642,5 +643,128 @@ export class ApiKeyManager {
       return `  ${p}: ${pool.length} key(s)`;
     });
     return lines.join('\n');
+  }
+
+  // ── Database Persistence Layer ────────────────────────────────────────────
+
+  /**
+   * Load all keys from PostgreSQL into the in-memory store on startup.
+   * Called once after DB connection is established.
+   */
+  static async loadFromDb(): Promise<void> {
+    if (!isDbAvailable()) return;
+    const db = getDb()!;
+    try {
+      const rows = await db.systemApiKey.findMany();
+      let loaded = 0;
+      for (const row of rows) {
+        if (!keyStore.has(row.provider)) keyStore.set(row.provider, []);
+        const pool = keyStore.get(row.provider)!;
+        // Skip if already in pool (e.g. seeded from ENV)
+        if (pool.some(k => k.id === row.id)) continue;
+        pool.push({
+          id: row.id,
+          provider: row.provider,
+          label: row.label,
+          key: row.encryptedKey,
+          isEnabled: row.isEnabled,
+          isHealthy: row.isHealthy,
+          addedAt: row.addedAt.toISOString(),
+          lastUsedAt: row.lastUsedAt?.toISOString() ?? null,
+          lastSuccessAt: row.lastSuccessAt?.toISOString() ?? null,
+          lastFailureAt: row.lastFailureAt?.toISOString() ?? null,
+          rateLimitUntil: Number(row.rateLimitUntil),
+          cooldownUntil: Number(row.cooldownUntil),
+          successCount: row.successCount,
+          failureCount: row.failureCount,
+          totalRequests: row.totalRequests,
+          avgLatencyMs: row.avgLatencyMs,
+          consecutiveFailures: row.consecutiveFails,
+          quotaStatus: (row.quotaStatus as any) || 'unknown',
+          rateLimitStatus: (row.rateLimitStatus as any) || 'unknown',
+          timeoutCount: row.timeoutCount,
+          rateLimitCount: row.rateLimitCount,
+          lastErrorMessage: row.lastErrorMessage ?? undefined,
+        });
+        loaded++;
+      }
+      if (loaded > 0) console.log(`[KeyPool] Loaded ${loaded} key(s) from database`);
+    } catch (e: any) {
+      console.error('[KeyPool] loadFromDb error:', e?.message);
+    }
+  }
+
+  /**
+   * Persist a single PooledApiKey to the database (upsert by ID).
+   */
+  static async persistKeyToDb(key: PooledApiKey): Promise<void> {
+    if (!isDbAvailable()) return;
+    const db = getDb()!;
+    try {
+      await db.systemApiKey.upsert({
+        where: { id: key.id },
+        update: {
+          label: key.label,
+          encryptedKey: key.key,
+          isEnabled: key.isEnabled,
+          isHealthy: key.isHealthy,
+          lastUsedAt: key.lastUsedAt ? new Date(key.lastUsedAt) : null,
+          lastSuccessAt: key.lastSuccessAt ? new Date(key.lastSuccessAt) : null,
+          lastFailureAt: key.lastFailureAt ? new Date(key.lastFailureAt) : null,
+          successCount: key.successCount,
+          failureCount: key.failureCount,
+          totalRequests: key.totalRequests,
+          avgLatencyMs: key.avgLatencyMs,
+          consecutiveFails: key.consecutiveFailures,
+          cooldownUntil: BigInt(key.cooldownUntil),
+          rateLimitUntil: BigInt(key.rateLimitUntil),
+          quotaStatus: key.quotaStatus,
+          rateLimitStatus: key.rateLimitStatus,
+          timeoutCount: key.timeoutCount,
+          rateLimitCount: key.rateLimitCount,
+          lastErrorMessage: key.lastErrorMessage ?? null,
+          healthScore: this.computeKeyHealthScore(key),
+        },
+        create: {
+          id: key.id,
+          provider: key.provider,
+          label: key.label,
+          encryptedKey: key.key,
+          isEnabled: key.isEnabled,
+          isHealthy: key.isHealthy,
+          addedAt: new Date(key.addedAt),
+          successCount: key.successCount,
+          failureCount: key.failureCount,
+          totalRequests: key.totalRequests,
+          avgLatencyMs: key.avgLatencyMs,
+          consecutiveFails: key.consecutiveFailures,
+          cooldownUntil: BigInt(key.cooldownUntil),
+          rateLimitUntil: BigInt(key.rateLimitUntil),
+          quotaStatus: key.quotaStatus,
+          rateLimitStatus: key.rateLimitStatus,
+          timeoutCount: key.timeoutCount,
+          rateLimitCount: key.rateLimitCount,
+          lastErrorMessage: key.lastErrorMessage ?? null,
+          healthScore: this.computeKeyHealthScore(key),
+        }
+      });
+    } catch (e: any) {
+      console.error('[KeyPool] persistKeyToDb error:', e?.message);
+    }
+  }
+
+  /**
+   * Delete a key from the database.
+   */
+  static async deleteKeyFromDb(keyId: string): Promise<void> {
+    if (!isDbAvailable()) return;
+    const db = getDb()!;
+    try {
+      await db.systemApiKey.delete({ where: { id: keyId } });
+    } catch (e: any) {
+      if (!e?.message?.includes('Record to delete does not exist')) {
+        console.error('[KeyPool] deleteKeyFromDb error:', e?.message);
+      }
+    }
   }
 }
