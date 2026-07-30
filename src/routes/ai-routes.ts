@@ -3,6 +3,8 @@ import { SeoEngine, sanitizeErrorMessage, getGeminiClient, aiTelemetryLogs } fro
 import { MARKETPLACE_REGISTRY } from '../registries/marketplaces';
 import { AuthMiddleware, userStore } from '../core/auth';
 import { syncUserLicense } from '../core/admin/admin-store';
+import { getDb, isDbAvailable } from '../core/db/client';
+import crypto from 'crypto';
 
 const router = Router();
 
@@ -183,6 +185,7 @@ router.get('/marketplaces', (req: Request, res: Response) => {
 // ─── Main AI Vision + Metadata Generation (PROTECTED) ────────────────────────
 router.post('/generate-metadata', async (req: Request, res: Response) => {
   const routeStart = Date.now();
+  const requestId = crypto.randomUUID();
   try {
     // MANDATORY: Auth + subscription validation
     let authResult: { userId: string; isAdmin: boolean } | null;
@@ -220,6 +223,24 @@ router.post('/generate-metadata', async (req: Request, res: Response) => {
       const errMsg = (genErr instanceof Error ? genErr.message : String(genErr)) || 'Generation failed';
       console.error('[generate-metadata] Generation error:', errMsg);
       const isTimeout = errMsg.includes('GENERATION_TIMEOUT') || errMsg.includes('timed out');
+      const elapsed = Date.now() - routeStart;
+      // Log telemetry failure to DB (non-blocking)
+      if (isDbAvailable()) {
+        getDb()!.telemetryLog.create({
+          data: {
+            requestId,
+            userId: authResult.userId,
+            provider: 'unknown',
+            model: 'unknown',
+            responseTimeMs: elapsed,
+            success: false,
+            errorType: isTimeout ? 'timeout' : 'generation_error',
+            errorMessage: errMsg.slice(0, 250),
+            fileName: req.body.fileName,
+            fileType: req.body.fileType,
+          }
+        }).catch(() => {});
+      }
       res.status(isTimeout ? 504 : 500).json({
         error: sanitizeErrorMessage(errMsg),
         code: isTimeout ? 'GENERATION_TIMEOUT' : 'GENERATION_FAILED'
@@ -227,10 +248,28 @@ router.post('/generate-metadata', async (req: Request, res: Response) => {
       return;
     }
 
+    const elapsed = Date.now() - routeStart;
+    // Log telemetry success to DB (non-blocking)
+    if (isDbAvailable()) {
+      getDb()!.telemetryLog.create({
+        data: {
+          requestId,
+          userId: authResult.userId,
+          provider: metadataResult?.provider || 'unknown',
+          model: metadataResult?.model || 'unknown',
+          responseTimeMs: elapsed,
+          success: true,
+          fileName: req.body.fileName,
+          fileType: req.body.fileType,
+        }
+      }).catch(() => {});
+    }
+
     // Increment real generation counter (fire-and-forget, never blocks response)
     userStore.incrementGeneration(authResult.userId).catch(() => {});
 
-    res.setHeader('X-Generation-Time', `${Date.now() - routeStart}ms`);
+    res.setHeader('X-Generation-Time', `${elapsed}ms`);
+    res.setHeader('X-Request-Id', requestId);
     return res.json(metadataResult);
   } catch (err: any) {
     const errMsg = (err instanceof Error ? err.message : String(err)) || 'Internal error';

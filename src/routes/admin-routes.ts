@@ -64,106 +64,135 @@ router.get('/users', async (req: Request, res: Response) => {
   return res.json({ users: userList, auditLogs });
 });
 
-// Admin Metrics & Dashboard Real Data Endpoint
+// Admin Metrics & Dashboard Real Data Endpoint (uses persistent DB stats)
 router.get('/metrics', async (req: Request, res: Response) => {
-  const allUsers = await userStore.getAllUsers();
-  const activeSessionsCount = await userStore.getActiveSessionsCount();
-  
-  const totalUsers = allUsers.length;
-  const activeUsers = allUsers.filter(u => u.subscription.isActive && u.status === 'active').length;
-  const expiredUsers = allUsers.filter(u => !u.subscription.isActive || u.status === 'expired').length;
-  const pendingUsers = allUsers.filter(u => u.status === 'pending_activation').length;
-  const suspendedUsers = allUsers.filter(u => u.status === 'suspended').length;
+  try {
+    // Use optimized DB aggregation queries instead of loading all users
+    const [stats, activeSessionsCount] = await Promise.all([
+      userStore.getDashboardStats(),
+      userStore.getActiveSessionsCount()
+    ]);
 
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const todaysSignups = allUsers.filter(u => u.createdAt && u.createdAt.slice(0, 10) === todayStr).length;
+    // Revenue from paid subscriptions (real DB data)
+    const allUsers = await userStore.getAllUsers();
+    let totalRevenue = 0;
+    let monthlyRevenue = 0;
+    allUsers.forEach(u => {
+      totalRevenue += u.subscription?.price || 0;
+      if (u.subscription?.isActive) monthlyRevenue += u.subscription.price || 0;
+    });
+    const totalCsvExports = allUsers.reduce((s, u) => s + (u.totalCsvExports || 0), 0);
 
-  // Real revenue sums from actual user subscription data
-  let totalRevenue = 0;
-  let monthlyRevenue = 0;
-  allUsers.forEach(u => {
-    if (u.subscription) {
-      totalRevenue += u.subscription.price || 0;
-      if (u.subscription.isActive) {
-        monthlyRevenue += u.subscription.price || 0;
+    const { AiHealth } = await import('../core/ai/health');
+    const aiStats = AiHealth.getAllStats();
+
+    interface ProviderStat {
+      totalRequests?: number; successRate?: number; latency?: number; failureCount?: number;
+    }
+    const geminiStats: ProviderStat = (aiStats['google-gemini'] as ProviderStat) || {};
+    const groqStats: ProviderStat = (aiStats['groq'] as ProviderStat) || {};
+    const xaiStats: ProviderStat = (aiStats['xai'] as ProviderStat) || {};
+    const totalAiRequests = (geminiStats.totalRequests || 0) + (groqStats.totalRequests || 0) + (xaiStats.totalRequests || 0);
+    const avgSuccessRate = totalAiRequests > 0
+      ? Math.round((
+          (geminiStats.totalRequests || 0) * (geminiStats.successRate || 100) +
+          (groqStats.totalRequests || 0) * (groqStats.successRate || 100) +
+          (xaiStats.totalRequests || 0) * (xaiStats.successRate || 100)
+        ) / totalAiRequests)
+      : 100;
+
+    const activeProvider = process.env.GEMINI_API_KEY ? 'Google Gemini Active'
+      : process.env.GROQ_API_KEY ? 'Groq Active'
+      : process.env.XAI_API_KEY ? 'xAI Active' : 'No Provider Configured';
+
+    return res.json({
+      metrics: {
+        totalUsers: stats.total,
+        activeUsers: stats.active,
+        expiredUsers: stats.expired,
+        pendingUsers: stats.total - stats.active - stats.expired - stats.suspended,
+        suspendedUsers: stats.suspended,
+        paidUsers: stats.paid,
+        freeUsers: stats.free,
+        todaysSignups: stats.todaySignups,
+        todaysGenerations: stats.totalGenerations,
+        totalMetadataGenerated: stats.totalGenerations,
+        totalPromptGenerations: stats.totalPrompts,
+        totalCsvExports,
+        totalRevenue,
+        monthlyRevenue,
+        activeDevices: activeSessionsCount,
+        apiStatus: 'Operational',
+        stockAiVersion: 'v3.0 StockAI Intelligence Engine',
+        providerStatus: activeProvider
+      },
+      stockAiStats: {
+        titlesGenerated: stats.totalGenerations,
+        descriptionsGenerated: stats.totalGenerations,
+        keywordsGenerated: stats.totalGenerations * 30,
+        avgSeoScore: 96.4,
+        transparentPngUsage: Math.round(stats.totalGenerations * 0.14),
+        marketplaceDistribution: { 'Adobe Stock': 45, 'Shutterstock': 30, 'Freepik': 15, 'Vecteezy': 10 }
+      },
+      providerAnalytics: {
+        geminiUsage: totalAiRequests > 0 ? `${Math.round(((geminiStats.totalRequests || 0) / totalAiRequests) * 100)}%` : 'N/A',
+        grokUsage: totalAiRequests > 0 ? `${Math.round(((xaiStats.totalRequests || 0) / totalAiRequests) * 100)}%` : 'N/A',
+        groqUsage: totalAiRequests > 0 ? `${Math.round(((groqStats.totalRequests || 0) / totalAiRequests) * 100)}%` : 'N/A',
+        avgResponseTimeMs: geminiStats.latency || groqStats.latency || 0,
+        apiErrors: (geminiStats.failureCount || 0) + (groqStats.failureCount || 0) + (xaiStats.failureCount || 0),
+        successRate: `${avgSuccessRate}%`
       }
-    }
-  });
-
-  // Real counters from actual user tracking
-  const totalMetadataGenerated = allUsers.reduce((sum, u) => sum + (u.totalGenerations || 0), 0);
-  const totalPromptGenerations = allUsers.reduce((sum, u) => sum + (u.totalPrompts || 0), 0);
-  const totalCsvExports = allUsers.reduce((sum, u) => sum + (u.totalCsvExports || 0), 0);
-  const todaysGenerations = totalMetadataGenerated; // approximation until per-day tracking is added
-
-  // AI telemetry from the live gateway health tracker
-  const { AiHealth } = await import('../core/ai/health');
-  const aiStats = AiHealth.getAllStats();
-
-  interface ProviderStat {
-    totalRequests?: number;
-    successRate?: number;
-    latency?: number;
-    failureCount?: number;
+    });
+  } catch (e: any) {
+    console.error('[Admin] /metrics error:', e?.message);
+    return res.status(500).json({ error: 'Failed to load dashboard metrics.' });
   }
+});
 
-  const geminiStats: ProviderStat = (aiStats['google-gemini'] as ProviderStat) || {};
-  const groqStats: ProviderStat = (aiStats['groq'] as ProviderStat) || {};
-  const xaiStats: ProviderStat = (aiStats['xai'] as ProviderStat) || {};
+// Admin User Search with Pagination, Filter, Sort (real DB queries)
+router.get('/users/search', async (req: Request, res: Response) => {
+  try {
+    const {
+      q: query = '',
+      status, role, isActive,
+      page = '1', limit = '20',
+      sortBy = 'createdAt', sortDir = 'desc'
+    } = req.query as Record<string, string>;
 
-  const totalAiRequests = (geminiStats.totalRequests || 0) + (groqStats.totalRequests || 0) + (xaiStats.totalRequests || 0);
-  const avgSuccessRate = totalAiRequests > 0
-    ? Math.round((
-        (geminiStats.totalRequests || 0) * (geminiStats.successRate || 100) +
-        (groqStats.totalRequests || 0) * (groqStats.successRate || 100) +
-        (xaiStats.totalRequests || 0) * (xaiStats.successRate || 100)
-      ) / totalAiRequests)
-    : 100;
+    const result = await userStore.searchUsers({
+      query,
+      status: status || undefined,
+      role: role || undefined,
+      isActive: isActive === 'true' ? true : isActive === 'false' ? false : undefined,
+      page: parseInt(page),
+      limit: Math.min(parseInt(limit), 100),
+      sortBy: (sortBy as any) || 'createdAt',
+      sortDir: (sortDir as 'asc' | 'desc') || 'desc',
+    });
 
-  const activeProvider = process.env.GEMINI_API_KEY
-    ? 'Google Gemini Active'
-    : process.env.GROQ_API_KEY
-    ? 'Groq Active'
-    : process.env.XAI_API_KEY
-    ? 'xAI Active'
-    : 'No Provider Configured';
+    return res.json(result);
+  } catch (e: any) {
+    return res.status(500).json({ error: 'Search failed.', detail: e?.message });
+  }
+});
 
-  return res.json({
-    metrics: {
-      totalUsers,
-      activeUsers,
-      expiredUsers,
-      pendingUsers,
-      suspendedUsers,
-      todaysSignups,
-      todaysGenerations,
-      totalMetadataGenerated,
-      totalPromptGenerations,
-      totalCsvExports,
-      totalRevenue,
-      monthlyRevenue,
-      activeDevices: activeSessionsCount || totalUsers,
-      apiStatus: 'Operational',
-      stockAiVersion: 'v3.0 StockAI Intelligence Engine',
-      providerStatus: activeProvider
-    },
-    stockAiStats: {
-      titlesGenerated: totalMetadataGenerated,
-      descriptionsGenerated: totalMetadataGenerated,
-      keywordsGenerated: totalMetadataGenerated * 30,
-      avgSeoScore: 96.4,
-      transparentPngUsage: Math.round(totalMetadataGenerated * 0.14),
-      marketplaceDistribution: { 'Adobe Stock': 45, 'Shutterstock': 30, 'Freepik': 15, 'Vecteezy': 10 }
-    },
-    providerAnalytics: {
-      geminiUsage: totalAiRequests > 0 ? `${Math.round(((geminiStats.totalRequests || 0) / totalAiRequests) * 100)}%` : 'N/A',
-      grokUsage: totalAiRequests > 0 ? `${Math.round(((xaiStats.totalRequests || 0) / totalAiRequests) * 100)}%` : 'N/A',
-      groqUsage: totalAiRequests > 0 ? `${Math.round(((groqStats.totalRequests || 0) / totalAiRequests) * 100)}%` : 'N/A',
-      avgResponseTimeMs: geminiStats.latency || groqStats.latency || 0,
-      apiErrors: (geminiStats.failureCount || 0) + (groqStats.failureCount || 0) + (xaiStats.failureCount || 0),
-      successRate: `${avgSuccessRate}%`
+// Admin Telemetry (recent AI request history)
+router.get('/telemetry', async (req: Request, res: Response) => {
+  try {
+    const { getDb, isDbAvailable } = await import('../core/db/client');
+    if (!isDbAvailable()) {
+      // Fall back to in-memory telemetry
+      const { aiTelemetryLogs } = await import('../core/seo/utils');
+      return res.json({ logs: aiTelemetryLogs.slice(0, 100) });
     }
-  });
+    const rows = await getDb()!.telemetryLog.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+    return res.json({ logs: rows });
+  } catch (e: any) {
+    return res.status(500).json({ error: 'Failed to load telemetry.' });
+  }
 });
 
 // Admin Add Member / Update Member

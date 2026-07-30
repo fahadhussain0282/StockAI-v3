@@ -192,27 +192,39 @@ Return output strictly in valid JSON format matching:
       });
     } catch (err: any) {
       const errMsg: string = (err instanceof Error ? err.message : String(err)) || 'Unknown gateway error';
-      console.error(`\n[STEP 7 ERROR] Vision AI request failed! Time elapsed: ${Date.now() - startTime}ms`);
-      console.error(`[STEP 7 ERROR] Details: ${errMsg}`);
-      throw new Error(`Enterprise AI Gateway Error: ${errMsg}`);
+      const elapsed = Date.now() - startTime;
+      console.error(`[StockAI Gateway] Vision AI request failed after ${elapsed}ms: ${errMsg}`);
+      // Provide a user-friendly message when no API keys are configured
+      if (errMsg.includes('No available API key') || errMsg.includes('No API key') || errMsg.includes('No keys')) {
+        throw new Error('No API keys configured. Please add your API key in Settings \u2192 API Keys.');
+      }
+      throw new Error(`AI Gateway Error: ${errMsg}`);
     }
 
     let parsed = normalizedResponse?.parsedResponse;
 
-    // ── Deep defensive validation on AI response ──────────────────────────────
+    // ── Enhanced JSON repair: handle markdown-fenced and partial responses ──────
     if (!parsed || typeof parsed !== 'object') {
-      // Attempt to parse rawResponse as fallback
       try {
-        const raw = normalizedResponse?.rawResponse;
-        if (raw) {
-          const jsonMatch = raw.match(/\{[\s\S]*\}/);
-          if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
+        let raw = normalizedResponse?.rawResponse || '';
+        // Strip markdown code fences: ```json ... ``` or ``` ... ```
+        raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+        // Extract first JSON object from response
+        const jsonMatch = raw.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          parsed = JSON.parse(jsonMatch[0]);
+        } else {
+          // Try JSON array fallback
+          const arrMatch = raw.match(/\[[\s\S]*\]/);
+          if (arrMatch) parsed = JSON.parse(arrMatch[0]);
         }
-      } catch {}
+      } catch (parseErr) {
+        console.warn('[StockAI] JSON repair failed:', parseErr);
+      }
     }
 
     if (!parsed || typeof parsed !== 'object' || Object.keys(parsed).length === 0) {
-      throw new Error('AI returned an empty or invalid JSON response. All providers attempted. Please check your API keys.');
+      throw new Error('AI returned an empty or invalid response. Please try again or check your API key.');
     }
 
     const cleanFileTitle = sanitizeFileName(fileName);
