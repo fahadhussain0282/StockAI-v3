@@ -13,6 +13,10 @@ export interface AiModelDefinition {
   freeTier?: boolean;
   deprecated?: boolean;
   tier?: 'free' | 'paid' | 'deprecated';
+  /** Whether this model is enabled for use (admin-configurable) */
+  isEnabled?: boolean;
+  /** Whether this model is the admin-selected default */
+  isDefault?: boolean;
 }
 
 export type ProviderStatusType = 'online' | 'offline' | 'degraded' | 'rate_limited' | 'quota_exhausted' | 'no_key' | 'disabled';
@@ -27,6 +31,7 @@ export interface AiProviderHealth {
   totalRequests?: number;
   fallbackCount?: number;
   recentFailures?: string[];
+  lastHealthCheck?: string;
 }
 
 export interface NormalizedAiResponse {
@@ -61,6 +66,7 @@ export interface AiDiagnosticsData {
   retries?: number;
   finalProvider?: string;
   finalModel?: string;
+  keyLabel?: string;
 }
 
 export interface GenerateVisionOptions {
@@ -85,4 +91,58 @@ export interface FallbackResult {
   response?: NormalizedAiResponse;
   error?: string;
   retries: number;
+}
+
+/** Quota and rate-limit status for individual API keys */
+export type KeyQuotaStatus = 'ok' | 'exhausted' | 'unknown';
+export type KeyRateLimitStatus = 'ok' | 'limited' | 'unknown';
+
+/** Result of a key validation check */
+export interface KeyValidationResult {
+  valid: boolean;
+  message: string;
+  latencyMs?: number;
+  rateLimited?: boolean;
+  quotaExhausted?: boolean;
+}
+
+/** In-memory model management state (per provider, per model) */
+export interface ModelManagementState {
+  [providerId: string]: {
+    [modelId: string]: {
+      isEnabled: boolean;
+      isDefault: boolean;
+      lastRefreshed?: string;
+    };
+  };
+}
+
+/** Provider overview for admin dashboard — combines pool, health, circuit and model info */
+export interface ProviderOverview {
+  id: string;
+  name: string;
+  isEnvConfigured: boolean;
+  pool: {
+    totalKeys: number;
+    enabledKeys: number;
+    healthyKeys: number;
+    rateLimitedKeys: number;
+    disabledKeys: number;
+    failedKeys: number;
+    availableKeys: number;
+    strategy: string;
+    rotationIndex: number;
+    avgSuccessRate: number;
+    avgLatencyMs: number;
+  };
+  health: AiProviderHealth;
+  circuit: {
+    state: string;
+    consecutiveFailures: number;
+    lastOpenedAt: string | null;
+    lastStateChange: string;
+    cooldownRemainingMs: number;
+  };
+  models: (AiModelDefinition & { isEnabled: boolean; isDefault: boolean })[];
+  lastHealthCheck: string | null;
 }

@@ -11,9 +11,14 @@ export class AuthService {
     'fahadhussain0282@gmail.com'
   ];
 
-  private static googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+  private static getGoogleClient(): OAuth2Client {
+    if (!process.env.GOOGLE_CLIENT_ID) {
+      throw new Error('Google OAuth is not configured on the server. Missing GOOGLE_CLIENT_ID.');
+    }
+    return new OAuth2Client(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET);
+  }
 
-  public static async signup(payload: any, deviceFingerprint: string): Promise<{ user: UserRecord; token: string }> {
+  public static async signup(payload: any, deviceFingerprint: string, clientDeviceId?: string): Promise<{ user: UserRecord; token: string }> {
     const { fullName, email, password, confirmPassword, termsAccepted } = payload;
 
     if (!termsAccepted) throw new Error('You must accept the Terms of Service.');
@@ -31,7 +36,7 @@ export class AuthService {
 
     const isAdminEmail = this.IMMUTABLE_ADMIN_EMAILS.includes(cleanEmail);
     const userId = `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-    const deviceId = `dev_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const deviceId = clientDeviceId || `dev_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     
     const passwordHash = await PasswordService.hashPassword(password);
 
@@ -58,7 +63,9 @@ export class AuthService {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       lastLoginAt: new Date().toISOString(),
-      totalGenerations: 0
+      totalGenerations: 0,
+      totalPrompts: 0,
+      totalCsvExports: 0
     };
 
     await userStore.createUser(newUser);
@@ -68,7 +75,7 @@ export class AuthService {
     return { user: newUser, token };
   }
 
-  public static async login(payload: any): Promise<{ user: UserRecord; token: string }> {
+  public static async login(payload: any, clientDeviceId?: string): Promise<{ user: UserRecord; token: string }> {
     const { email, password } = payload;
     
     const emailValidation = AuthValidators.validateEmail(email);
@@ -83,7 +90,7 @@ export class AuthService {
     if (!isMatch) throw new Error('Invalid email address or password.');
 
     // Generate new session (this invalidates old sessions automatically via SessionService)
-    const newDeviceId = `dev_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const newDeviceId = clientDeviceId || `dev_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const token = await SessionService.createSession(user.id, newDeviceId);
 
     user.lastLoginAt = new Date().toISOString();
@@ -93,12 +100,10 @@ export class AuthService {
     return { user, token };
   }
 
-  public static async loginWithGoogle(idToken: string): Promise<{ user: UserRecord; token: string }> {
-    if (!process.env.GOOGLE_CLIENT_ID) {
-      throw new Error('Google OAuth is not configured on the server.');
-    }
+  public static async loginWithGoogle(idToken: string, clientDeviceId?: string): Promise<{ user: UserRecord; token: string }> {
+    const client = this.getGoogleClient();
 
-    const ticket = await this.googleClient.verifyIdToken({
+    const ticket = await client.verifyIdToken({
       idToken,
       audience: process.env.GOOGLE_CLIENT_ID,
     });
@@ -110,7 +115,7 @@ export class AuthService {
     let user = await userStore.findUserByEmail(cleanEmail);
 
     const isAdminEmail = this.IMMUTABLE_ADMIN_EMAILS.includes(cleanEmail);
-    const newDeviceId = `dev_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const newDeviceId = clientDeviceId || `dev_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
     if (!user) {
       const userId = `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
@@ -139,7 +144,9 @@ export class AuthService {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         lastLoginAt: new Date().toISOString(),
-        totalGenerations: 0
+        totalGenerations: 0,
+        totalPrompts: 0,
+        totalCsvExports: 0
       };
 
       await userStore.createUser(user);

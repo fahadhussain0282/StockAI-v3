@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { LeftSidebar } from './components/LeftSidebar';
 import { TopControlsBar } from './components/TopControlsBar';
 import { MetadataSettingsPanel } from './components/MetadataSettingsPanel';
@@ -24,9 +24,10 @@ import {
   AuthUser
 } from './types';
 import { MARKETPLACE_REGISTRY } from './registries/marketplaces';
-import { PROVIDER_REGISTRY } from './registries/providers';
+import { PROVIDER_MAP } from './registries/providers';
 import { generateMarketplaceCSV } from './services/csvnest/exporter';
 import { calculateSEOAndQualityScores } from './services/csvnest/scoring';
+import { encryptData, decryptData } from './utils/crypto';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'generator' | 'tools' | 'how-to-use' | 'pricing' | 'discord'>('generator');
@@ -58,7 +59,7 @@ export default function App() {
     return saved;
   });
 
-  // Fetch Current Auth User on Startup
+  // Fetch Current Auth User on Startup — Session Persistence
   useEffect(() => {
     if (authToken) {
       fetch('/api/auth/me', {
@@ -75,6 +76,11 @@ export default function App() {
         if (data.user) {
           setCurrentUser(data.user);
           setSubscription(data.user.subscription);
+          // Auto-restore admin route: if user is admin and on root, redirect to /admin
+          if (data.user.role === 'admin' && window.location.pathname === '/') {
+            window.history.replaceState({}, '', '/admin');
+            setRoutePath('/admin');
+          }
         }
         setIsInitializing(false);
       })
@@ -85,25 +91,23 @@ export default function App() {
         setIsInitializing(false);
       });
     } else {
-      // Clear session if no auth token is present (No auto-login)
       setCurrentUser(null);
       setIsInitializing(false);
     }
   }, [authToken, deviceId]);
 
-  // Subscription State & Expiry Logic
+  // Subscription State (Default: Inactive for new users)
   const [subscription, setSubscription] = useState<UserSubscription>(() => {
     const now = new Date();
-    const expiry = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
     return {
       planId: 'plan_1m',
       planName: '1 Month Plan',
       price: 300,
       durationDays: 30,
       activatedAt: now.toISOString(),
-      expiresAt: expiry.toISOString(),
-      isActive: true,
-      isExpired: false,
+      expiresAt: now.toISOString(), // Expired by default
+      isActive: false,
+      isExpired: true,
       deviceId
     };
   });
@@ -123,13 +127,31 @@ export default function App() {
     setAuthToken(token);
     localStorage.setItem('stockai_auth_token', token);
     setSubscription(user.subscription);
+    // Auto-redirect admins to the admin dashboard
+    if (user.role === 'admin') {
+      window.history.pushState({}, '', '/admin');
+      setRoutePath('/admin');
+    }
   };
 
-  const handleLogout = () => {
-    setCurrentUser(null);
-    setAuthToken('');
-    localStorage.removeItem('stockai_auth_token');
-    setIsLockedExperienceOpen(false);
+  const handleLogout = async () => {
+    try {
+      if (authToken) {
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authToken}`
+          }
+        });
+      }
+    } catch (err) {
+      console.error('Logout failed:', err);
+    } finally {
+      setCurrentUser(null);
+      setAuthToken('');
+      localStorage.removeItem('stockai_auth_token');
+      setIsLockedExperienceOpen(false);
+    }
   };
 
   // Modals & Admin Panel
@@ -150,56 +172,73 @@ export default function App() {
 
   useEffect(() => {
     const root = document.documentElement;
-    const isDark =
-      theme === 'dark' ||
-      (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    
+    const applyTheme = () => {
+      const isDark = theme === 'dark' || (theme === 'system' && mediaQuery.matches);
+      if (isDark) {
+        root.classList.add('dark');
+        root.classList.remove('light');
+      } else {
+        root.classList.add('light');
+        root.classList.remove('dark');
+      }
+    };
 
-    if (isDark) {
-      root.classList.add('dark');
-      root.classList.remove('light');
-    } else {
-      root.classList.add('light');
-      root.classList.remove('dark');
+    applyTheme();
+
+    if (theme === 'system') {
+      const listener = () => applyTheme();
+      mediaQuery.addEventListener('change', listener);
+      return () => mediaQuery.removeEventListener('change', listener);
     }
   }, [theme]);
 
-  // Provider & API Keys State (Isolated per user)
+  // Provider & API Keys State (Isolated & Encrypted per user)
   const [selectedProvider, setSelectedProviderState] = useState<string>('google-gemini');
   const [providerKeys, setProviderKeysState] = useState<Record<string, string>>({ 'google-gemini': '', grok: '', groq: '' });
   const [providerModels, setProviderModelsState] = useState<Record<string, string>>({
-    'google-gemini': 'gemini-3.6-flash',
-    grok: 'grok-2-vision-1212',
-    groq: 'llama-3.2-11b-vision-preview'
+    'google-gemini': PROVIDER_MAP['google-gemini']?.defaultModel || 'gemini-2.5-flash',
+    xai: PROVIDER_MAP['xai']?.defaultModel || 'grok-2-vision-1212',
+    groq: PROVIDER_MAP['groq']?.defaultModel || 'meta-llama/llama-4-maverick-17b-128e-instruct'
   });
 
   // Load and isolate state on login/logout
   useEffect(() => {
     if (currentUser) {
-      try {
-        const uid = currentUser.id;
-        const savedProvider = localStorage.getItem(`stockai_provider_${uid}`);
-        if (savedProvider) setSelectedProviderState(savedProvider);
-        
-        const savedKeysStr = localStorage.getItem(`stockai_provider_keys_${uid}`);
-        if (savedKeysStr) {
-           setProviderKeysState(JSON.parse(atob(savedKeysStr)));
+      const uid = currentUser.id;
+      const savedProvider = localStorage.getItem(`stockai_provider_${uid}`);
+      if (savedProvider) setSelectedProviderState(savedProvider);
+      
+      const loadKeys = async () => {
+        try {
+          const savedKeysEnc = localStorage.getItem(`stockai_provider_keys_${uid}`);
+          if (savedKeysEnc) {
+             const decryptedStr = await decryptData(savedKeysEnc);
+             if (decryptedStr) {
+               setProviderKeysState(JSON.parse(decryptedStr));
+             }
+          }
+        } catch (e) {
+          console.error("Failed to load user keys", e);
         }
-        
+      };
+      loadKeys();
+      
+      try {
         const savedModelsStr = localStorage.getItem(`stockai_provider_models_${uid}`);
         if (savedModelsStr) {
            setProviderModelsState(JSON.parse(savedModelsStr));
         }
-      } catch (e) {
-        console.error("Failed to load user settings", e);
-      }
+      } catch (e) {}
     } else {
       // Completely clear all user-specific state for a new session
       setSelectedProviderState('google-gemini');
       setProviderKeysState({ 'google-gemini': '', grok: '', groq: '' });
       setProviderModelsState({
-        'google-gemini': 'gemini-3.6-flash',
-        grok: 'grok-2-vision-1212',
-        groq: 'llama-3.2-11b-vision-preview'
+        'google-gemini': PROVIDER_MAP['google-gemini']?.defaultModel || 'gemini-2.5-flash',
+        xai: PROVIDER_MAP['xai']?.defaultModel || 'grok-2-vision-1212',
+        groq: PROVIDER_MAP['groq']?.defaultModel || 'meta-llama/llama-4-maverick-17b-128e-instruct'
       });
       setFiles([]);
     }
@@ -212,14 +251,13 @@ export default function App() {
     }
   };
 
-  const setProviderKey = (provider: string, key: string) => {
-    setProviderKeysState(prev => {
-      const updated = { ...prev, [provider]: key };
-      if (currentUser) {
-        localStorage.setItem(`stockai_provider_keys_${currentUser.id}`, btoa(JSON.stringify(updated)));
-      }
-      return updated;
-    });
+  const setProviderKey = async (provider: string, key: string) => {
+    const updated = { ...providerKeys, [provider]: key };
+    setProviderKeysState(updated);
+    if (currentUser) {
+      const encrypted = await encryptData(JSON.stringify(updated));
+      localStorage.setItem(`stockai_provider_keys_${currentUser.id}`, encrypted);
+    }
   };
 
   const setProviderModel = (provider: string, model: string) => {
@@ -261,22 +299,6 @@ export default function App() {
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
 
-  // Add sample demo assets if queue is empty on first load so user sees instant capability
-  useEffect(() => {
-    if (files.length === 0) {
-      const demoFile: UploadedFile = {
-        id: 'demo_1',
-        name: 'abstract_vector_glass_background.png',
-        size: 2450000,
-        type: 'image/png',
-        fileType: 'image',
-        previewUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80',
-        status: 'pending'
-      };
-      setFiles([demoFile]);
-    }
-  }, []);
-
   // Handle File Uploads
   const handleUpload = async (fileList: FileList) => {
     const newFiles: UploadedFile[] = [];
@@ -312,19 +334,22 @@ export default function App() {
     setFiles(prev => [...prev, ...newFiles]);
   };
 
-  const handleRemoveFile = (id: string) => {
+  const handleRemoveFile = useCallback((id: string) => {
     setFiles(prev => prev.filter(f => f.id !== id));
-  };
+  }, []);
 
-  const handleClearAll = () => {
+  const handleClearAll = useCallback(() => {
     setFiles([]);
-  };
+  }, []);
 
   // Run StockAI Metadata Generation
   const handleGenerateAll = async () => {
     if (files.length === 0 || isGenerating) return;
 
-    if (!currentUser || !currentUser.subscription || !currentUser.subscription.isActive) {
+    // ── Auth check — admin always passes, regular users need active subscription ──
+    const isAdmin = currentUser?.role === 'admin';
+    const hasActiveSub = currentUser?.subscription?.isActive && !currentUser?.subscription?.isExpired;
+    if (!currentUser || (!isAdmin && !hasActiveSub)) {
       setIsLockedExperienceOpen(true);
       return;
     }
@@ -333,91 +358,148 @@ export default function App() {
 
     const activeKey = providerKeys[selectedProvider] || '';
     const activeModel = providerModels[selectedProvider] || '';
+    const REQUEST_TIMEOUT_MS = 60000; // 60s client-side timeout (server has 30s, but base64 upload can be slow)
 
-    for (const file of files) {
-      if (file.status === 'completed' && file.metadata) continue;
+    const filesToProcess = files.filter(f => !(f.status === 'completed' && f.metadata));
 
+    for (const file of filesToProcess) {
+      // Mark this file as generating
       setFiles(prev =>
-        prev.map(f => (f.id === file.id ? { ...f, status: 'generating', progressMessage: 'Vision analysis & StockAI scoring...' } : f))
+        prev.map(f => f.id === file.id
+          ? { ...f, status: 'generating', progressMessage: 'Vision analysis & StockAI scoring...' }
+          : f)
       );
 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
       try {
-        let res = await fetch('/api/generate-metadata', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${authToken}`,
-            'X-Device-Id': deviceId
-          },
-          body: JSON.stringify({
-            fileId: file.id,
-            fileName: file.name,
-            fileType: file.fileType,
-            base64Data: file.base64Data,
-            previewUrl: file.previewUrl,
-            mimeType: file.type,
-            settings,
-            provider: selectedProvider,
-            customApiKey: activeKey,
-            selectedModel: activeModel
-          })
+        const requestBody = JSON.stringify({
+          fileId: file.id,
+          fileName: file.name,
+          fileType: file.fileType,
+          base64Data: file.base64Data,
+          previewUrl: file.previewUrl,
+          mimeType: file.type,
+          settings,
+          provider: selectedProvider,
+          customApiKey: activeKey,
+          selectedModel: activeModel
         });
 
-        // Auto-retry once with exponential backoff on transient/429 failures
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+          'X-Device-Id': deviceId
+        };
+
+        let res = await fetch('/api/generate-metadata', {
+          method: 'POST',
+          headers,
+          body: requestBody,
+          signal: controller.signal
+        });
+
+        // Auto-retry once on 429 rate-limit with backoff
         if (!res.ok && res.status === 429) {
-          await new Promise(r => setTimeout(r, 1500));
+          console.warn('[StockAI] Rate limited — retrying in 2s...');
+          await new Promise(r => setTimeout(r, 2000));
           res = await fetch('/api/generate-metadata', {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${authToken}`,
-              'X-Device-Id': deviceId
-            },
-            body: JSON.stringify({
-              fileId: file.id,
-              fileName: file.name,
-              fileType: file.fileType,
-              base64Data: file.base64Data,
-              previewUrl: file.previewUrl,
-              mimeType: file.type,
-              settings,
-              provider: selectedProvider,
-              customApiKey: activeKey,
-              selectedModel: activeModel
-            })
+            headers,
+            body: requestBody,
+            signal: controller.signal
           });
         }
 
+        clearTimeout(timeoutId);
 
         if (!res.ok) {
-          const errJson = await res.json().catch(() => ({}));
-          throw new Error(errJson.error || 'Failed to generate metadata');
+          if (res.status === 401) {
+            // Session expired — clear auth and show sign-in
+            setCurrentUser(null);
+            setAuthToken('');
+            localStorage.removeItem('stockai_auth_token');
+            setIsAuthModalOpen(true);
+            // Mark remaining files as error
+            setFiles(prev => prev.map(f =>
+              f.status === 'generating' ? { ...f, status: 'error', error: 'Session expired. Please sign in again.' } : f
+            ));
+            break;
+          }
+          if (res.status === 403) {
+            setIsLockedExperienceOpen(true);
+            setFiles(prev => prev.map(f =>
+              f.id === file.id ? { ...f, status: 'error', error: 'Subscription required to generate metadata.' } : f
+            ));
+            continue;
+          }
+
+          let errMsg = `Server error (${res.status})`;
+          try {
+            const errJson = await res.json();
+            errMsg = errJson?.error || errJson?.message || errMsg;
+          } catch {}
+          throw new Error(errMsg);
         }
 
-        const metadata: MetadataResult = await res.json();
+        let metadata: MetadataResult;
+        try {
+          metadata = await res.json();
+        } catch {
+          throw new Error('Server returned an invalid response. Please try again.');
+        }
+
+        // Validate response has required fields
+        if (!metadata || typeof metadata !== 'object') {
+          throw new Error('Received empty metadata response from server.');
+        }
 
         setFiles(prev =>
-          prev.map(f => (f.id === file.id ? { ...f, status: 'completed', metadata } : f))
+          prev.map(f => f.id === file.id ? { ...f, status: 'completed', metadata } : f)
         );
 
-        // Deduct 1 credit
         setCredits(c => ({
           ...c,
           creditsRemaining: Math.max(0, c.creditsRemaining - 1)
         }));
+
       } catch (err: any) {
-        console.error('Generation error:', err);
+        clearTimeout(timeoutId);
+
+        let errorMessage = 'Generation failed. Please try again.';
+        if (err?.name === 'AbortError') {
+          errorMessage = 'Request timed out after 60 seconds. The server is busy — please try again.';
+        } else if (err?.message) {
+          errorMessage = err.message;
+        }
+
+        console.error(`[StockAI] Generation error for "${file.name}":`, errorMessage);
+
+        // GUARANTEED terminal state — file will NEVER remain stuck in "generating"
         setFiles(prev =>
-          prev.map(f => (f.id === file.id ? { ...f, status: 'error', error: err.message || 'Generation failed' } : f))
+          prev.map(f => f.id === file.id
+            ? { ...f, status: 'error', error: errorMessage }
+            : f)
         );
       }
     }
 
+
+    // GUARANTEED — isGenerating always resets, even if an error occurs mid-loop
+    // SAFETY NET: Force any file still in 'generating' or 'analyzing' state to 'error'
+    // This prevents permanently stuck files if an exception bypassed the per-file catch.
+    setFiles(prev => prev.map(f =>
+      (f.status === 'generating' || f.status === 'analyzing')
+        ? { ...f, status: 'error', error: 'Generation did not complete. Please try again.' }
+        : f
+    ));
     setIsGenerating(false);
+
   };
 
   // Live Metadata Editing Handlers
-  const handleUpdateTitle = (fileId: string, newTitle: string) => {
+  const handleUpdateTitle = useCallback((fileId: string, newTitle: string) => {
     setFiles(prev =>
       prev.map(f => {
         if (f.id === fileId && f.metadata) {
@@ -441,9 +523,9 @@ export default function App() {
         return f;
       })
     );
-  };
+  }, [settings]);
 
-  const handleUpdateDescription = (fileId: string, newDesc: string) => {
+  const handleUpdateDescription = useCallback((fileId: string, newDesc: string) => {
     setFiles(prev =>
       prev.map(f => {
         if (f.id === fileId && f.metadata) {
@@ -458,9 +540,9 @@ export default function App() {
         return f;
       })
     );
-  };
+  }, []);
 
-  const handleAddKeyword = (fileId: string, newKw: string) => {
+  const handleAddKeyword = useCallback((fileId: string, newKw: string) => {
     setFiles(prev =>
       prev.map(f => {
         if (f.id === fileId && f.metadata) {
@@ -491,9 +573,9 @@ export default function App() {
         return f;
       })
     );
-  };
+  }, [settings]);
 
-  const handleRemoveKeyword = (fileId: string, kwToRemove: string) => {
+  const handleRemoveKeyword = useCallback((fileId: string, kwToRemove: string) => {
     setFiles(prev =>
       prev.map(f => {
         if (f.id === fileId && f.metadata) {
@@ -520,9 +602,9 @@ export default function App() {
         return f;
       })
     );
-  };
+  }, [settings]);
 
-  const handleUpdateCategory = (fileId: string, primary: string, secondary: string) => {
+  const handleUpdateCategory = useCallback((fileId: string, primary: string, secondary: string) => {
     setFiles(prev =>
       prev.map(f => {
         if (f.id === fileId && f.metadata) {
@@ -538,10 +620,16 @@ export default function App() {
         return f;
       })
     );
-  };
+  }, []);
 
   // Export CSV Handler
-  const handleExportCSV = () => {
+  const handleExportCSV = useCallback(() => {
+    const isAdminUser = currentUser?.role === 'admin';
+    const hasActive = currentUser?.subscription?.isActive && !currentUser?.subscription?.isExpired;
+    if (!isAdminUser && (!hasActive)) {
+      setIsLockedExperienceOpen(true);
+      return;
+    }
     const completedMetas = files.filter(f => f.metadata).map(f => f.metadata!);
     if (completedMetas.length === 0) return;
 
@@ -554,7 +642,7 @@ export default function App() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  };
+  }, [currentUser, files, settings.targetPlatform]);
 
   const handleSelectPlan = (planName: string, newCredits: number, durationDays: number, price: number) => {
     const now = new Date();
@@ -580,13 +668,13 @@ export default function App() {
     });
   };
 
-  const activeProviderName = PROVIDER_REGISTRY[selectedProvider]?.name || 'Google Gemini';
-  const activeModelName = providerModels[selectedProvider] || 'gemini-3.6-flash';
+  const activeProviderName = PROVIDER_MAP[selectedProvider]?.name || 'Google Gemini';
+  const activeModelName = providerModels[selectedProvider] || PROVIDER_MAP[selectedProvider]?.defaultModel || 'gemini-2.5-flash';
 
   if (isInitializing) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-[#0c0c0e] text-white">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+        <div className="w-10 h-10 border-4 border-zinc-800 border-t-white rounded-full animate-spin"></div>
       </div>
     );
   }
@@ -619,13 +707,14 @@ export default function App() {
   }
 
   return (
-    <div className={`min-h-screen flex bg-[#0c0c0e] text-zinc-200 font-sans ${theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light'}`}>
+    <div className={`min-h-screen flex bg-[#0c0c0e] text-zinc-200 font-sans`}>
       {/* Left Sidebar */}
       <LeftSidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         credits={credits}
         currentUser={currentUser}
+        subscription={subscription}
         onOpenPricing={() => setIsPricingOpen(true)}
         onOpenAuth={() => setIsAuthModalOpen(true)}
         onLogout={handleLogout}
@@ -670,7 +759,7 @@ export default function App() {
                       isGenerating={isGenerating}
                       onOpenPricing={() => setIsPricingOpen(true)}
                       onOpenApiKeys={() => setIsApiKeysOpen(true)}
-                      hasCreditsOrKey={true}
+      hasCreditsOrKey={subscription.isActive && !subscription.isExpired || currentUser?.role === 'admin'}
                     />
 
                     <ResultsWorkspace
@@ -685,7 +774,12 @@ export default function App() {
                     />
                   </>
                 ) : (
-                  <PromptGeneratorView customApiKey={providerKeys[selectedProvider] || ''} />
+                  <PromptGeneratorView 
+                    customApiKey={providerKeys[selectedProvider] || ''}
+                    onOpenLocked={() => setIsLockedExperienceOpen(true)}
+                    isSubscriptionActive={subscription.isActive && !subscription.isExpired || currentUser?.role === 'admin'}
+                    authToken={authToken}
+                  />
                 )}
               </div>
             </>
@@ -693,18 +787,21 @@ export default function App() {
 
           {activeTab === 'tools' && (
             <div className="flex-1 overflow-y-auto p-6">
-              <AllToolsView />
+              <AllToolsView 
+                isSubscriptionActive={subscription.isActive && !subscription.isExpired || currentUser?.role === 'admin'}
+                onOpenLocked={() => setIsLockedExperienceOpen(true)}
+              />
             </div>
           )}
 
           {activeTab === 'how-to-use' && (
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 overflow-y-auto p-6 animate-fade-in">
               <HowToUseView />
             </div>
           )}
 
           {activeTab === 'pricing' && (
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 overflow-y-auto p-6 animate-fade-in">
               <div className="max-w-4xl mx-auto space-y-4">
                 <button
                   onClick={() => setIsPricingOpen(true)}
@@ -717,7 +814,7 @@ export default function App() {
           )}
 
           {activeTab === 'discord' && (
-            <div className="flex-1 overflow-y-auto p-6 flex flex-col items-center justify-center text-center space-y-4">
+            <div className="flex-1 overflow-y-auto p-6 flex flex-col items-center justify-center text-center space-y-4 animate-fade-in">
               <div className="w-16 h-16 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-300">
                 <span className="text-2xl">💬</span>
               </div>
@@ -781,4 +878,3 @@ export default function App() {
     </div>
   );
 }
-

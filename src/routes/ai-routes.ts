@@ -182,45 +182,126 @@ router.get('/marketplaces', (req: Request, res: Response) => {
 
 // ─── Main AI Vision + Metadata Generation (PROTECTED) ────────────────────────
 router.post('/generate-metadata', async (req: Request, res: Response) => {
+  const routeStart = Date.now();
   try {
     // MANDATORY: Auth + subscription validation
-    const authResult = await validateAuthAndSubscription(req, res);
-    if (!authResult) return; // Response already sent
+    let authResult: { userId: string; isAdmin: boolean } | null;
+    try {
+      authResult = await validateAuthAndSubscription(req, res);
+    } catch (authErr: any) {
+      const msg = (authErr instanceof Error ? authErr.message : String(authErr)) || 'Authentication failed';
+      console.error('[generate-metadata] Auth validation threw:', msg);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Authentication check failed. Please try again.', code: 'AUTH_CHECK_FAILED' });
+      }
+      return;
+    }
+    if (!authResult) return; // Response already sent by validateAuthAndSubscription
 
     const { targetPlatform = 'general' } = req.body.settings || {};
     const marketplaceRule = MARKETPLACE_REGISTRY[targetPlatform] || MARKETPLACE_REGISTRY.general;
 
-    const metadataResult = await SeoEngine.generateMetadata({
-      ...req.body,
-      marketplaceRule
-    });
+    // CRITICAL FIX: 25s server-side timeout wrapper — permanently prevents stuck states
+    // Server hard limit is 30s; we use 25s to give time for the response to be sent.
+    const GENERATION_TIMEOUT_MS = 25000;
+
+    let metadataResult: any;
+    try {
+      metadataResult = await Promise.race([
+        SeoEngine.generateMetadata({ ...req.body, marketplaceRule }),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error('GENERATION_TIMEOUT: Metadata generation exceeded 25s. All providers attempted. Please try again.')),
+            GENERATION_TIMEOUT_MS
+          )
+        )
+      ]);
+    } catch (genErr: any) {
+      const errMsg = (genErr instanceof Error ? genErr.message : String(genErr)) || 'Generation failed';
+      console.error('[generate-metadata] Generation error:', errMsg);
+      const isTimeout = errMsg.includes('GENERATION_TIMEOUT') || errMsg.includes('timed out');
+      res.status(isTimeout ? 504 : 500).json({
+        error: sanitizeErrorMessage(errMsg),
+        code: isTimeout ? 'GENERATION_TIMEOUT' : 'GENERATION_FAILED'
+      });
+      return;
+    }
 
     // Increment real generation counter (fire-and-forget, never blocks response)
     userStore.incrementGeneration(authResult.userId).catch(() => {});
 
+    res.setHeader('X-Generation-Time', `${Date.now() - routeStart}ms`);
     return res.json(metadataResult);
   } catch (err: any) {
-    console.error('Error in /api/generate-metadata:', err);
-    return res.status(500).json({ error: sanitizeErrorMessage(err?.message || err) });
+    const errMsg = (err instanceof Error ? err.message : String(err)) || 'Internal error';
+    console.error('Unexpected error in /api/generate-metadata:', errMsg);
+    if (!res.headersSent) {
+      return res.status(500).json({ error: sanitizeErrorMessage(errMsg), code: 'INTERNAL_ERROR' });
+    }
   }
 });
 
 // ─── AI Prompt Generation (PROTECTED) ────────────────────────────────────────
 router.post('/generate-prompt', async (req: Request, res: Response) => {
+  const routeStart = Date.now();
   try {
     // MANDATORY: Auth + subscription validation
-    const authResult = await validateAuthAndSubscription(req, res);
-    if (!authResult) return; // Response already sent
+    let authResult: { userId: string; isAdmin: boolean } | null;
+    try {
+      authResult = await validateAuthAndSubscription(req, res);
+    } catch (authErr: any) {
+      const msg = (authErr instanceof Error ? authErr.message : String(authErr)) || 'Authentication failed';
+      console.error('[generate-prompt] Auth validation threw:', msg);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Authentication check failed. Please try again.', code: 'AUTH_CHECK_FAILED' });
+      }
+      return;
+    }
+    if (!authResult) return;
 
-    const promptResult = await SeoEngine.generatePrompt(req.body);
+    // 20s timeout for prompt generation (simpler operation)
+    const PROMPT_TIMEOUT_MS = 20000;
+
+    let promptResult: any;
+    try {
+      promptResult = await Promise.race([
+        SeoEngine.generatePrompt(req.body),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error('PROMPT_TIMEOUT: Prompt generation exceeded 20s.')),
+            PROMPT_TIMEOUT_MS
+          )
+        )
+      ]);
+    } catch (genErr: any) {
+      const errMsg = (genErr instanceof Error ? genErr.message : String(genErr)) || 'Prompt generation failed';
+      console.error('[generate-prompt] Generation error:', errMsg);
+      // For prompt generation, fall through to template fallback by returning a 200 with default prompt
+      // This ensures the user always gets something useful
+      res.setHeader('X-Generation-Time', `${Date.now() - routeStart}ms`);
+      return res.json({
+        promptMidjourney: `/imagine prompt: professional commercial stock photo, studio lighting, clean background, sharp focus, 8k resolution --ar 16:9 --v 6.0`,
+        promptDalle: `A professional commercial stock photograph with studio lighting and clean background. High quality, sharp focus.`,
+        promptFlux: `professional commercial stock photo, studio lighting, clean composition, ultra-detailed, 8k resolution`,
+        styleKeywords: ['studio lighting', 'clean background', 'professional', 'commercial', '8k resolution'],
+        commercialConcepts: ['business', 'technology', 'lifestyle', 'corporate', 'modern'],
+        aiGenerated: false,
+        provider: 'fallback',
+        fallbackReason: sanitizeErrorMessage(errMsg)
+      });
+    }
 
     // Increment real prompt counter (fire-and-forget, never blocks response)
     userStore.incrementPrompt(authResult.userId).catch(() => {});
 
+    res.setHeader('X-Generation-Time', `${Date.now() - routeStart}ms`);
     return res.json(promptResult);
   } catch (err: any) {
-    console.error('Error in /api/generate-prompt:', err);
-    return res.status(500).json({ error: sanitizeErrorMessage(err?.message || err) });
+    const errMsg = (err instanceof Error ? err.message : String(err)) || 'Internal error';
+    console.error('Unexpected error in /api/generate-prompt:', errMsg);
+    if (!res.headersSent) {
+      return res.status(500).json({ error: sanitizeErrorMessage(errMsg), code: 'INTERNAL_ERROR' });
+    }
   }
 });
 

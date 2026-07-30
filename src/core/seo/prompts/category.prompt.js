@@ -1,0 +1,1 @@
+export var getCategoryPrompt = function (categories) { return "\n5. CATEGORY PREDICTION: Choose primary and secondary categories from: [".concat(categories.join(', '), "]. Ensure accuracy based on primary subject and industry.\n"); };

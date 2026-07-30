@@ -1,7 +1,7 @@
 /**
- * StockAI Enterprise AI Gateway — Dynamic Provider Fallback Configuration
+ * StockAI Enterprise — Dynamic Provider Fallback Configuration
  *
- * Priority order: Google Gemini → OpenAI → Anthropic → Groq → xAI
+ * Priority order: Google Gemini → OpenAI → Anthropic → Groq → xAI → OpenRouter
  *
  * This order can be overridden dynamically by admin settings.
  * Never hardcode provider selection in application logic.
@@ -12,14 +12,18 @@ export const PROVIDER_FALLBACK_ORDER = [
   'openai',
   'anthropic',
   'groq',
-  'xai'
+  'xai',
+  'openrouter'
 ];
+
+/** All supported provider IDs for validation */
+export const ALL_PROVIDER_IDS = new Set(PROVIDER_FALLBACK_ORDER);
 
 /**
  * Validates if the provider ID is known to the fallback system.
  */
 export function isValidProvider(providerId: string): boolean {
-  return PROVIDER_FALLBACK_ORDER.includes(providerId);
+  return ALL_PROVIDER_IDS.has(providerId);
 }
 
 /**

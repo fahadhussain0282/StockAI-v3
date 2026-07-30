@@ -1,1 +1,194 @@
 @import "tailwindcss";
+
+/* ── StockAI Design System — Theme Variables ─────────────────────────────── */
+
+:root {
+  --transition-theme: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease;
+}
+
+/* Dark Mode (default) */
+:root,
+html.dark,
+.dark {
+  --bg-primary: #0c0c0e;
+  --bg-secondary: #09090b;
+  --bg-surface: #111113;
+  --bg-elevated: #161618;
+  --bg-glass: rgba(12, 12, 14, 0.85);
+  --bg-glass-hover: rgba(24, 24, 27, 0.92);
+  --border-primary: #27272a;
+  --border-subtle: #18181b;
+  --border-glow: rgba(255, 255, 255, 0.08);
+  --text-primary: #f4f4f5;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --text-accent: #ffffff;
+  --accent-primary: #ffffff;
+  --accent-secondary: #e4e4e7;
+  --accent-emerald: #34d399;
+  --accent-amber: #fbbf24;
+  --glow-primary: rgba(255, 255, 255, 0.06);
+  --glow-emerald: rgba(52, 211, 153, 0.15);
+  --glow-amber: rgba(251, 191, 36, 0.15);
+  --glow-blue: rgba(99, 102, 241, 0.15);
+  --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.6);
+  --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.8);
+  --gradient-pricing-1: linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(168, 85, 247, 0.08) 100%);
+  --gradient-pricing-2: linear-gradient(135deg, rgba(52, 211, 153, 0.12) 0%, rgba(6, 182, 212, 0.08) 100%);
+}
+
+/* Light Mode */
+html.light,
+.light {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f9fafb;
+  --bg-surface: #f3f4f6;
+  --bg-elevated: #e5e7eb;
+  --bg-glass: rgba(255, 255, 255, 0.90);
+  --bg-glass-hover: rgba(249, 250, 251, 0.95);
+  --border-primary: #d1d5db;
+  --border-subtle: #e5e7eb;
+  --border-glow: rgba(0, 0, 0, 0.06);
+  --text-primary: #111827;
+  --text-secondary: #4b5563;
+  --text-muted: #9ca3af;
+  --text-accent: #000000;
+  --accent-primary: #000000;
+  --accent-secondary: #1f2937;
+  --accent-emerald: #059669;
+  --accent-amber: #d97706;
+  --glow-primary: rgba(0, 0, 0, 0.04);
+  --glow-emerald: rgba(5, 150, 105, 0.1);
+  --glow-amber: rgba(217, 119, 6, 0.1);
+  --glow-blue: rgba(79, 70, 229, 0.1);
+  --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.08);
+  --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.15);
+  --gradient-pricing-1: linear-gradient(135deg, rgba(99, 102, 241, 0.06) 0%, rgba(168, 85, 247, 0.04) 100%);
+  --gradient-pricing-2: linear-gradient(135deg, rgba(5, 150, 105, 0.06) 0%, rgba(6, 182, 212, 0.04) 100%);
+}
+
+/* ── Global Base ──────────────────────────────────────────────────────────── */
+*, *::before, *::after {
+  transition: var(--transition-theme);
+}
+
+/* Exclude transitions that shouldn't be animated with theme */
+input, textarea, select, button, svg, path, circle, rect {
+  transition: none;
+}
+button, input, textarea, select {
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* ── Glass Morphism Utilities ─────────────────────────────────────────────── */
+.glass {
+  background: var(--bg-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-glow);
+}
+
+.glass-hover:hover {
+  background: var(--bg-glass-hover);
+}
+
+/* ── Glow Effects ─────────────────────────────────────────────────────────── */
+.glow-sm {
+  box-shadow: 0 0 12px var(--glow-primary);
+}
+
+.glow-emerald {
+  box-shadow: 0 0 20px var(--glow-emerald);
+}
+
+.glow-amber {
+  box-shadow: 0 0 20px var(--glow-amber);
+}
+
+/* ── Premium Gradient Borders ─────────────────────────────────────────────── */
+.gradient-border-indigo {
+  background: var(--gradient-pricing-1);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+.gradient-border-emerald {
+  background: var(--gradient-pricing-2);
+  border: 1px solid rgba(52, 211, 153, 0.25);
+}
+
+/* ── Animations ───────────────────────────────────────────────────────────── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 var(--glow-emerald); }
+  50%       { box-shadow: 0 0 16px 4px var(--glow-emerald); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-fade-in { animation: fadeIn 0.3s ease both; }
+.animate-fade-in-up { animation: fadeInUp 0.35s ease both; }
+.animate-scale-in { animation: scaleIn 0.2s ease both; }
+
+/* Skeleton loader */
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-surface) 25%, var(--bg-elevated) 50%, var(--bg-surface) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* ── Scrollbar Styling ────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--border-primary);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ── Focus Styles ─────────────────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.3);
+  outline-offset: 2px;
+}
+.light :focus-visible {
+  outline: 2px solid rgba(0, 0, 0, 0.2);
+}
+
+/* ── Selection ────────────────────────────────────────────────────────────── */
+::selection {
+  background: rgba(255, 255, 255, 0.15);
+  color: var(--text-primary);
+}
+.light ::selection {
+  background: rgba(0, 0, 0, 0.1);
+}

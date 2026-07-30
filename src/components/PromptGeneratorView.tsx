@@ -1,34 +1,62 @@
 import React, { useState } from 'react';
-import { Sparkles, Copy, Check, Wand2, RefreshCw } from 'lucide-react';
+import { Sparkles, Copy, Check, Wand2, RefreshCw, AlertCircle } from 'lucide-react';
 
 interface PromptGeneratorViewProps {
   customApiKey?: string;
+  isSubscriptionActive?: boolean;
+  onOpenLocked?: () => void;
+  authToken?: string;
 }
 
-export const PromptGeneratorView: React.FC<PromptGeneratorViewProps> = ({ customApiKey }) => {
+export const PromptGeneratorView: React.FC<PromptGeneratorViewProps> = ({
+  customApiKey,
+  isSubscriptionActive = false,
+  onOpenLocked,
+  authToken
+}) => {
   const [topic, setTopic] = useState('Minimalist abstract 3D glass background with vibrant gradients');
   const [style, setStyle] = useState('Photorealistic studio lighting, cinematic 8k');
   const [mood, setMood] = useState('Corporate tech, clean minimal');
   const [isGenerating, setIsGenerating] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const handleGeneratePrompt = async () => {
+    // Check subscription/admin access before making the request
+    if (!isSubscriptionActive && onOpenLocked) {
+      onOpenLocked();
+      return;
+    }
+
     setIsGenerating(true);
+    setError(null);
     try {
+      const token = authToken || localStorage.getItem('stockai_auth_token') || '';
+      const deviceId = localStorage.getItem('stockai_device_id') || '';
       const res = await fetch('/api/generate-prompt', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          'X-Device-Id': deviceId
+        },
         body: JSON.stringify({ topic, style, mood, customApiKey })
       });
       const data = await res.json();
-      setResult(data);
-    } catch (err) {
+      if (!res.ok) {
+        setError(data?.error || `Request failed (${res.status})`);
+      } else {
+        setResult(data);
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Failed to generate prompt. Please try again.');
       console.error('Failed to generate prompt:', err);
     } finally {
       setIsGenerating(false);
     }
   };
+
 
   const handleCopy = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -91,6 +119,14 @@ export const PromptGeneratorView: React.FC<PromptGeneratorViewProps> = ({ custom
         {isGenerating ? <RefreshCw className="w-4 h-4 animate-spin text-black" /> : <Wand2 className="w-4 h-4 text-black" />}
         {isGenerating ? 'Engineering Prompts...' : 'Generate AI Prompts'}
       </button>
+
+      {/* Error Display */}
+      {error && (
+        <div className="flex items-start gap-2 p-3 bg-red-950/40 border border-red-900/60 rounded-lg">
+          <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+          <p className="text-xs text-red-300">{error}</p>
+        </div>
+      )}
 
       {/* Prompts Output */}
       {result && (

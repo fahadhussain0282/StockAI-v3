@@ -24,8 +24,20 @@ try {
   // Ignore if fetch descriptor is fixed
 }
 
-// Google Client ID should be provided via environment variables in production.
-const GOOGLE_CLIENT_ID = (import.meta as any).env.VITE_GOOGLE_CLIENT_ID || 'dummy-client-id.apps.googleusercontent.com';
+// Google Client ID — loaded from VITE_GOOGLE_CLIENT_ID environment variable.
+// This value is intentionally public and safe to expose to the browser.
+// It is NOT the secret — only the Client ID.
+const GOOGLE_CLIENT_ID = (import.meta as any).env.VITE_GOOGLE_CLIENT_ID as string | undefined;
+
+if (!GOOGLE_CLIENT_ID) {
+  // Throw at app startup so the error is immediately visible in the browser console.
+  // This prevents silent failure with a fake client ID.
+  throw new Error(
+    '[StockAI] VITE_GOOGLE_CLIENT_ID is not set. ' +
+    'Add it to your .env file (local) and to Vercel Environment Variables (production). ' +
+    'Google Sign-In will not work without it.'
+  );
+}
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

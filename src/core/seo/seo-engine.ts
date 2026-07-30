@@ -55,22 +55,17 @@ export class SeoEngine {
 
   private static async executeGenerationPass(options: GenerateMetadataOptions): Promise<any> {
     const startTime = Date.now();
-    
-    console.log('\n================================================================================');
-    console.log('[STOCKAI VISION PIPELINE LOG]');
-    console.log('================================================================================');
 
     const {
       fileId, fileName, fileType, base64Data, previewUrl, mimeType,
       settings, customApiKey, provider = 'google-gemini', selectedModel, marketplaceRule
     } = options;
 
-    console.log(`\n[STEP 1] Image received`);
-    console.log(`File: ${fileName || fileId}, Type: ${fileType}`);
-
     const targetPlatform = marketplaceRule.id;
     const titleLength = settings?.titleLength || marketplaceRule.titleMaxLength || 70;
     const keywordsCount = settings?.keywordsCount || 30;
+
+    console.log(`[SeoEngine] Generating metadata: file="${fileName || fileId}" type=${fileType} platform=${targetPlatform} provider=${provider}`);
 
     const cacheKey = `${fileName || fileId}_${fileType}_${(base64Data || '').length}_${targetPlatform}_${titleLength}_${keywordsCount}_${settings?.forceRefinement ? 'refine' : 'v1'}`;
     const cachedEntry = visionMetadataCache.get(cacheKey);
@@ -84,14 +79,11 @@ export class SeoEngine {
         timestamp: new Date().toISOString(),
         cacheHit: true
       });
+      console.log(`[SeoEngine] Cache hit for "${fileName || fileId}" (${Date.now() - startTime}ms)`);
       return { ...cachedEntry.data, generatedAt: new Date().toISOString() };
     }
 
-    console.log('\n[STEP 2] Image preprocessing');
     const { resolvedBase64, resolvedMimeType } = await resolveBase64Image(base64Data, previewUrl, mimeType);
-    console.log('\n[STEP 3] Image encoding');
-    console.log(`Base64 Length: ${resolvedBase64?.length || 0} characters`);
-    console.log(`Mime Type: ${resolvedMimeType}`);
 
     // AI Context building - Enterprise SEO V2 Upgrade
     let systemInstruction = `You are StockAI's proprietary Intelligence Engine V3, an expert microstock metadata specialist.
@@ -149,7 +141,9 @@ Return output strictly in valid JSON format matching:
 
     const userPrompt = `Analyze this ${fileType || 'asset'} for ${marketplaceRule.name}. Provide an exceptionally deep Vision Analysis Shared Context, a highly commercial 8-12 word title, an engaging description, and exactly ${keywordsCount} keywords sorted strictly by commercial priority. Maximize the commercial metadata quality.`;
 
-    console.log('\n[STEP 4] Provider selection via Enterprise AI Gateway');
+    // Only pass mimeType when there is an actual image (not for text-only calls)
+    const mimeTypeForRequest = resolvedBase64 ? (resolvedMimeType || 'image/jpeg') : undefined;
+
     let normalizedResponse;
 
     try {
@@ -158,8 +152,8 @@ Return output strictly in valid JSON format matching:
         model: selectedModel,
         systemInstruction,
         userPrompt,
-        base64Image: resolvedBase64,
-        mimeType: resolvedMimeType,
+        base64Image: resolvedBase64 || undefined,
+        mimeType: mimeTypeForRequest,
         customApiKey,
         developerMode: settings?.developerMode,
         responseSchema: {
@@ -197,30 +191,76 @@ Return output strictly in valid JSON format matching:
         }
       });
     } catch (err: any) {
+      const errMsg: string = (err instanceof Error ? err.message : String(err)) || 'Unknown gateway error';
       console.error(`\n[STEP 7 ERROR] Vision AI request failed! Time elapsed: ${Date.now() - startTime}ms`);
-      throw new Error(`Enterprise AI Gateway Error: ${err.message}`);
+      console.error(`[STEP 7 ERROR] Details: ${errMsg}`);
+      throw new Error(`Enterprise AI Gateway Error: ${errMsg}`);
     }
 
-    console.log('\n[STEP 10] SEO parser');
-    let parsed = normalizedResponse.parsedResponse;
-    if (!parsed || Object.keys(parsed).length === 0) {
-      throw new Error('AI returned an empty or invalid JSON response. Aborting to prevent fake metadata generation.');
+    let parsed = normalizedResponse?.parsedResponse;
+
+    // ── Deep defensive validation on AI response ──────────────────────────────
+    if (!parsed || typeof parsed !== 'object') {
+      // Attempt to parse rawResponse as fallback
+      try {
+        const raw = normalizedResponse?.rawResponse;
+        if (raw) {
+          const jsonMatch = raw.match(/\{[\s\S]*\}/);
+          if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
+        }
+      } catch {}
+    }
+
+    if (!parsed || typeof parsed !== 'object' || Object.keys(parsed).length === 0) {
+      throw new Error('AI returned an empty or invalid JSON response. All providers attempted. Please check your API keys.');
     }
 
     const cleanFileTitle = sanitizeFileName(fileName);
-    
-    // We NO LONGER inject fake Business/Marketing defaults if API fails.
-    // If the API succeeds but misses context, we safely cast it here.
-    const context: SharedMetadataContext = parsed.sharedContext;
 
-    let rawTitle = parsed.title || cleanFileTitle;
-    let rawKeywords: string[] = Array.isArray(parsed.keywords) ? parsed.keywords : [];
+    // ── Normalize sharedContext with complete defaults to prevent any undefined access ──
+    const rawContext = parsed.sharedContext;
+    const context: SharedMetadataContext = {
+      assetType: (['Icon','Vector','Illustration','Photo','3D Render','Pattern','Mockup','Background','Sheet/Collection'].includes(rawContext?.assetType)
+        ? rawContext.assetType
+        : 'Photo') as SharedMetadataContext['assetType'],
+      primarySubject: rawContext?.primarySubject || cleanFileTitle || 'subject',
+      secondarySubjects: Array.isArray(rawContext?.secondarySubjects) ? rawContext.secondarySubjects : [],
+      visualStyle: rawContext?.visualStyle || 'professional',
+      industry: rawContext?.industry || 'general',
+      commercialCategory: rawContext?.commercialCategory || 'general',
+      purpose: rawContext?.purpose || 'commercial',
+      targetAudience: Array.isArray(rawContext?.targetAudience) ? rawContext.targetAudience : ['general'],
+      marketplaceIntent: rawContext?.marketplaceIntent || 'commercial microstock',
+      colorPalette: Array.isArray(rawContext?.colorPalette) ? rawContext.colorPalette : [],
+      composition: rawContext?.composition || 'standard',
+      dominantObjects: Array.isArray(rawContext?.dominantObjects) ? rawContext.dominantObjects : [],
+      visualComplexity: (['Minimal','Moderate','Complex'].includes(rawContext?.visualComplexity)
+        ? rawContext.visualComplexity
+        : 'Moderate') as SharedMetadataContext['visualComplexity'],
+      backgroundType: (['Isolated','Transparent','Scenic','Studio','Abstract','Unknown'].includes(rawContext?.backgroundType)
+        ? rawContext.backgroundType
+        : 'Unknown') as SharedMetadataContext['backgroundType'],
+      fileFormat: rawContext?.fileFormat || fileType || 'jpg',
+      isTransparent: rawContext?.isTransparent === true,
+      isCollection: rawContext?.isCollection === true,
+      seasonHoliday: rawContext?.seasonHoliday || '',
+      moodEmotion: rawContext?.moodEmotion || 'neutral',
+      businessUseCase: rawContext?.businessUseCase || 'commercial',
+      lightingType: rawContext?.lightingType || 'natural',
+      // CRITICAL FIX: AI sometimes returns commercialIntentScore as a string — use Number() coercion
+      commercialIntentScore: rawContext?.commercialIntentScore != null ? (Number(rawContext.commercialIntentScore) || 75) : 75
+    };
 
-    console.log('\n[STEP 12] Title Engine processing');
+    let rawTitle = (typeof parsed.title === 'string' && parsed.title.trim().length > 0)
+      ? parsed.title.trim()
+      : cleanFileTitle;
+    // CRITICAL FIX: Guard against null/undefined keywords from AI response
+    const rawKeywordsInput: any[] = Array.isArray(parsed.keywords) ? parsed.keywords : (parsed.keywords ? [parsed.keywords] : []);
+    let rawKeywords: string[] = rawKeywordsInput.filter((k: any) => typeof k === 'string' && k.trim().length > 0);
+
     // Refine Title using Context
     let finalTitle = TitleEngine.refineTitleToCommercialStandard(rawTitle, context, cleanFileTitle);
-    
-    console.log('\n[STEP 11] Keyword Engine processing');
+
     // Refine Keywords using Context and strict priority
     let cleanedKeywords = KeywordEngine.ensureExactKeywordCount(rawKeywords, keywordsCount, context, marketplaceRule);
 
@@ -236,7 +276,6 @@ Return output strictly in valid JSON format matching:
     cleanedKeywords = SheetEngine.optimizeKeywords(cleanedKeywords, context);
     finalTitle = SheetEngine.optimizeTitle(finalTitle, context);
     
-    console.log('\n[STEP 13] Category Engine (Categories populated)');
     // Final bucket generation for scores and output
     const keywordBuckets = KeywordEngine.generateKeywordBuckets(cleanedKeywords, context);
 
@@ -251,15 +290,15 @@ Return output strictly in valid JSON format matching:
     const primaryCategory = categoryPrediction.primaryCategory;
     const secondaryCategory = categoryPrediction.secondaryCategory;
 
-    console.log('\n[STEP 14] Final metadata generated');
     const totalTime = Date.now() - startTime;
-    console.log(`Total generation time: ${totalTime}ms`);
+    console.log(`[SeoEngine] Metadata complete: "${finalTitle.substring(0, 50)}..." | ${cleanedKeywords.length} keywords | ${totalTime}ms | provider=${normalizedResponse.provider}`);
 
     const result = {
       id: `meta_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       fileId: fileName || fileId,
       title: finalTitle,
-      description: sanitizeGeneratedText(parsed.description || finalTitle),
+      // CRITICAL FIX: Guard against null/undefined description from AI response
+      description: sanitizeGeneratedText((parsed.description && typeof parsed.description === 'string' && parsed.description.trim().length > 0) ? parsed.description : finalTitle),
       keywords: cleanedKeywords,
       keywordBuckets,
       primaryCategory,
@@ -314,7 +353,7 @@ Target: High-quality commercial microstock asset`;
         systemInstruction,
         userPrompt,
         base64Image: undefined,
-        mimeType: 'image/jpeg',
+        mimeType: undefined,
         customApiKey,
         developerMode: false,
         responseSchema: {

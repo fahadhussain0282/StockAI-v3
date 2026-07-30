@@ -4,6 +4,7 @@ import { GroqProvider } from './providers/groq';
 import { XAiProvider } from './providers/xai';
 import { OpenAiProvider } from './providers/openai';
 import { AnthropicProvider } from './providers/anthropic';
+import { OpenRouterProvider } from './providers/openrouter';
 
 class Registry {
   private providers: Map<string, BaseAiProvider> = new Map();
@@ -14,6 +15,7 @@ class Registry {
     this.register(new XAiProvider());
     this.register(new OpenAiProvider());
     this.register(new AnthropicProvider());
+    this.register(new OpenRouterProvider());
   }
 
   register(provider: BaseAiProvider) {
@@ -32,7 +34,7 @@ class Registry {
     return Array.from(this.providers.keys());
   }
 
-  /** Returns all providers that have a configured API key */
+  /** Returns all providers that have a configured API key in ENV */
   getEnabledProviders(): BaseAiProvider[] {
     return Array.from(this.providers.values()).filter(p => p.isEnabled());
   }

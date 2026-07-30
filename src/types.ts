@@ -242,12 +242,17 @@ export interface AdminUserRecord {
   fullName: string;
   email: string;
   role: 'guest' | 'contributor' | 'admin';
+  status: string;
   planName: string;
   planStatus: 'active' | 'expired' | 'pending_activation' | 'suspended';
   expiresAt: string;
+  activatedAt: string;
   activeDeviceId: string;
   lastActive: string;
+  createdAt: string;
   totalGenerations: number;
+  totalPrompts: number;
+  totalCsvExports: number;
 }
 
 export type UserRole = 'guest' | 'contributor' | 'admin';

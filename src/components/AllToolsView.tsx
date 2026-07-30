@@ -1,231 +1,161 @@
 import React, { useState } from 'react';
 import { 
-  Grid2X2, 
-  RefreshCw, 
-  Scissors, 
-  Layers, 
-  CheckCircle2, 
-  FolderTree, 
-  FileSpreadsheet, 
-  Copy, 
-  Check, 
-  ArrowRight 
+  FileText, Search, Type, List, Tag, CheckCircle2, 
+  AlertCircle, ArrowRight, Settings2, Sparkles, FileDown, 
+  Wand2, Image as ImageIcon, BarChart, ShieldCheck, Lock
 } from 'lucide-react';
 
-export const AllToolsView: React.FC = () => {
-  const [activeTool, setActiveTool] = useState<'cleaner' | 'rewriter' | 'compliance'>('cleaner');
+interface AllToolsViewProps {
+  isSubscriptionActive?: boolean;
+  onOpenLocked?: () => void;
+}
 
-  // Tool 1: Keyword Deduplicator & Cleaner
-  const [dirtyKeywords, setDirtyKeywords] = useState('business, corporate, business, modern, 4k, hd, best, BEST, office, meeting, business');
-  const [cleanedKeywords, setCleanedKeywords] = useState('');
+interface ToolCard {
+  id: string;
+  category: string;
+  title: string;
+  description: string;
+  icon: React.ElementType;
+  color: string;
+}
 
-  // Tool 2: Batch Title Rewriter
-  const [rawTitle, setRawTitle] = useState('a business guy working on computer in office');
-  const [rewrittenTitle, setRewrittenTitle] = useState('');
+const TOOLS: ToolCard[] = [
+  // Keyword Tools
+  { id: 'kw-cluster', category: 'Keyword Tools', title: 'Keyword Cluster Generator', description: 'Group semantically related keywords into high-ranking clusters.', icon: List, color: 'text-indigo-400' },
+  { id: 'kw-translator', category: 'Keyword Tools', title: 'Keyword Translator', description: 'Translate keywords into 15+ languages for global marketplaces.', icon: Type, color: 'text-indigo-400' },
+  { id: 'kw-density', category: 'Keyword Tools', title: 'Keyword Density Checker', description: 'Analyze keyword frequency to prevent spam penalties.', icon: BarChart, color: 'text-indigo-400' },
+  { id: 'kw-duplicate', category: 'Keyword Tools', title: 'Duplicate Checker', description: 'Find and remove redundant tags from your metadata.', icon: Tag, color: 'text-indigo-400' },
 
-  const [copied, setCopied] = useState(false);
+  // Title/Description Tools
+  { id: 'title-opt', category: 'Title & Description', title: 'Title Optimizer', description: 'Rewrite titles to maximize CTR and search relevance.', icon: Type, color: 'text-emerald-400' },
+  { id: 'desc-opt', category: 'Title & Description', title: 'Description Optimizer', description: 'Generate engaging descriptions that convert browsers to buyers.', icon: FileText, color: 'text-emerald-400' },
+  { id: 'meta-val', category: 'Title & Description', title: 'Metadata Validator', description: 'Ensure metadata meets strict agency character limits.', icon: ShieldCheck, color: 'text-emerald-400' },
 
-  const handleCleanKeywords = () => {
-    const list: string[] = dirtyKeywords.split(/[,;\n]+/).map(k => k.trim().toLowerCase()).filter(Boolean);
-    const spam: string[] = ['4k', 'hd', 'best', 'top', 'cheap', 'download'];
-    const unique: string[] = Array.from(new Set<string>(list)).filter((k: string) => !spam.includes(k));
-    setCleanedKeywords(unique.join(', '));
-  };
+  // CSV Tools
+  { id: 'csv-val', category: 'CSV & Export', title: 'CSV Validator', description: 'Pre-flight check your CSV for formatting errors before uploading.', icon: CheckCircle2, color: 'text-amber-400' },
+  { id: 'csv-prev', category: 'CSV & Export', title: 'CSV Preview', description: 'Visualize how your metadata will look in a spreadsheet.', icon: FileDown, color: 'text-amber-400' },
+  { id: 'csv-repair', category: 'CSV & Export', title: 'CSV Repair Tool', description: 'Auto-fix common delimiter and encoding issues in CSVs.', icon: Settings2, color: 'text-amber-400' },
 
-  const handleRewriteTitle = () => {
-    if (!rawTitle) return;
-    const words = rawTitle.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
-    setRewrittenTitle(words.join(' '));
-  };
+  // File Tools
+  { id: 'file-clean', category: 'File Management', title: 'Filename Cleaner', description: 'Remove special characters and spaces for agency compliance.', icon: ImageIcon, color: 'text-blue-400' },
+  { id: 'file-gen', category: 'File Management', title: 'Filename Generator', description: 'Auto-generate descriptive SEO filenames from titles.', icon: ImageIcon, color: 'text-blue-400' },
+  { id: 'file-batch', category: 'File Management', title: 'Batch Rename', description: 'Rename thousands of files sequentially in one click.', icon: List, color: 'text-blue-400' },
 
-  const handleCopy = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  // SEO Tools
+  { id: 'seo-score', category: 'SEO Intelligence', title: 'SEO Score Analyzer', description: 'Get a 1-100 score predicting commercial performance.', icon: Search, color: 'text-purple-400' },
+  { id: 'seo-intent', category: 'SEO Intelligence', title: 'Commercial Intent Checker', description: 'Analyze if tags attract buyers or just browsers.', icon: BarChart, color: 'text-purple-400' },
+  { id: 'seo-cat', category: 'SEO Intelligence', title: 'Category Recommender', description: 'AI suggests the best primary/secondary categories.', icon: List, color: 'text-purple-400' },
+
+  // AI Prompt Tools
+  { id: 'ai-opt', category: 'AI Generation', title: 'AI Prompt Optimizer', description: 'Enhance Midjourney/DALL-E prompts for stock photography.', icon: Sparkles, color: 'text-pink-400' },
+  { id: 'ai-lib', category: 'AI Generation', title: 'Prompt Library', description: 'Save and organize your best performing AI prompts.', icon: FileText, color: 'text-pink-400' },
+  
+  // Compliance
+  { id: 'comp-check', category: 'Agency Compliance', title: 'Marketplace Compliance', description: 'Verify terms against Adobe, Shutterstock, and Getty rules.', icon: ShieldCheck, color: 'text-teal-400' },
+];
+
+export const AllToolsView: React.FC<AllToolsViewProps> = ({ isSubscriptionActive = false, onOpenLocked }) => {
+  const [activeCategory, setActiveCategory] = useState<string>('All');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const categories = ['All', ...Array.from(new Set(TOOLS.map(t => t.category)))];
+
+  const filteredTools = TOOLS.filter(tool => {
+    const matchesCat = activeCategory === 'All' || tool.category === activeCategory;
+    const matchesSearch = tool.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          tool.description.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesCat && matchesSearch;
+  });
+
+  const handleToolClick = () => {
+    if (!isSubscriptionActive && onOpenLocked) {
+      onOpenLocked();
+    }
   };
 
   return (
-    <div className="space-y-6 font-sans">
-      <div className="bg-[#0c0c0e] border border-zinc-800 rounded-lg p-6 space-y-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-300">
-            <Grid2X2 className="w-5 h-5 text-zinc-300" />
+    <div className="max-w-6xl mx-auto space-y-8 animate-fade-in">
+      
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div className="space-y-1.5">
+          <div className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-zinc-400 bg-zinc-900 px-2.5 py-1 rounded">
+            <Wand2 className="w-3.5 h-3.5" /> Contributor Utilities
           </div>
-          <div>
-            <h2 className="text-base font-semibold text-white">Stock Contributor Utility Suite</h2>
-            <p className="text-xs text-zinc-400">
-              Dedicated tools to clean, transform, and optimize stock metadata batches.
-            </p>
-          </div>
+          <h1 className="text-3xl font-bold text-white tracking-tight">StockAI Tools</h1>
+          <p className="text-sm text-zinc-400 max-w-xl">
+            A comprehensive suite of 15+ enterprise tools to clean, optimize, and validate your microstock metadata before uploading to agencies.
+          </p>
         </div>
-
-        {/* Tool Selector Tabs */}
-        <div className="flex flex-wrap gap-2 pt-2 border-t border-zinc-800">
-          <button
-            onClick={() => setActiveTool('cleaner')}
-            className={`flex items-center gap-2 px-4 py-2 rounded text-xs font-semibold transition-colors cursor-pointer ${
-              activeTool === 'cleaner'
-                ? 'bg-white text-black shadow-sm'
-                : 'bg-zinc-900 text-zinc-400 hover:text-white border border-zinc-800'
-            }`}
-          >
-            <Scissors className="w-3.5 h-3.5" />
-            Keyword Deduplicator & Cleaner
-          </button>
-
-          <button
-            onClick={() => setActiveTool('rewriter')}
-            className={`flex items-center gap-2 px-4 py-2 rounded text-xs font-semibold transition-colors cursor-pointer ${
-              activeTool === 'rewriter'
-                ? 'bg-white text-black shadow-sm'
-                : 'bg-zinc-900 text-zinc-400 hover:text-white border border-zinc-800'
-            }`}
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            Title Commercial Rewriter
-          </button>
-
-          <button
-            onClick={() => setActiveTool('compliance')}
-            className={`flex items-center gap-2 px-4 py-2 rounded text-xs font-semibold transition-colors cursor-pointer ${
-              activeTool === 'compliance'
-                ? 'bg-white text-black shadow-sm'
-                : 'bg-zinc-900 text-zinc-400 hover:text-white border border-zinc-800'
-            }`}
-          >
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            Marketplace Rules Checker
-          </button>
+        
+        {/* Search */}
+        <div className="relative w-full md:w-72">
+          <Search className="absolute left-3 top-2.5 w-4 h-4 text-zinc-500" />
+          <input
+            type="text"
+            placeholder="Search tools..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-zinc-900/50 border border-zinc-800 rounded-lg pl-9 pr-4 py-2 text-sm text-white focus:outline-none focus:border-zinc-600 focus:bg-zinc-900 transition-all"
+          />
         </div>
       </div>
 
-      {/* Active Tool View */}
-      {activeTool === 'cleaner' && (
-        <div className="bg-[#0c0c0e] border border-zinc-800 rounded-lg p-6 space-y-4">
-          <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-            <Scissors className="w-4 h-4 text-zinc-400" />
-            Keyword Cleaner & Anti-Spam Filter
-          </h3>
-          <p className="text-xs text-zinc-400">
-            Removes duplicates, trims whitespace, standardizes case, and strips promotional words like "4k", "hd", "best".
-          </p>
-
-          <div className="space-y-2">
-            <label className="text-xs font-medium text-zinc-300">Paste Comma-Separated Keywords</label>
-            <textarea
-              rows={3}
-              value={dirtyKeywords}
-              onChange={e => setDirtyKeywords(e.target.value)}
-              className="w-full bg-zinc-900 border border-zinc-800 rounded p-3 text-xs text-white focus:outline-none focus:border-zinc-600"
-            />
-          </div>
-
+      {/* Categories */}
+      <div className="flex flex-wrap gap-2">
+        {categories.map(cat => (
           <button
-            onClick={handleCleanKeywords}
-            className="px-5 py-2 bg-white text-black text-xs font-semibold rounded hover:bg-zinc-200 transition-colors flex items-center gap-1.5 cursor-pointer"
+            key={cat}
+            onClick={() => setActiveCategory(cat)}
+            className={`px-3 py-1.5 rounded-md text-[11px] font-medium transition-all duration-200 cursor-pointer ${
+              activeCategory === cat 
+                ? 'bg-zinc-100 text-black shadow-sm' 
+                : 'bg-zinc-900 text-zinc-400 border border-zinc-800 hover:text-white hover:border-zinc-700'
+            }`}
           >
-            Clean & Deduplicate Keywords
+            {cat}
           </button>
+        ))}
+      </div>
 
-          {cleanedKeywords && (
-            <div className="bg-zinc-900/60 border border-zinc-800 rounded-lg p-4 space-y-2">
-              <div className="flex items-center justify-between text-xs font-semibold text-zinc-200">
-                <span>Cleaned Output ({cleanedKeywords.split(',').length} unique keywords)</span>
-                <button
-                  onClick={() => handleCopy(cleanedKeywords)}
-                  className="text-[10px] text-zinc-400 hover:text-white flex items-center gap-1 cursor-pointer"
-                >
-                  {copied ? <Check className="w-3 h-3 text-white" /> : <Copy className="w-3 h-3" />}
-                  {copied ? 'Copied' : 'Copy'}
-                </button>
+      {/* Tools Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {filteredTools.map(tool => {
+          const Icon = tool.icon;
+          return (
+            <div 
+              key={tool.id}
+              onClick={handleToolClick}
+              className="group relative bg-[#121214] border border-zinc-800/80 rounded-xl p-5 hover:border-zinc-700 transition-all duration-300 cursor-pointer hover:-translate-y-0.5 shadow-sm hover:shadow-lg overflow-hidden"
+            >
+              {!isSubscriptionActive && (
+                <div className="absolute top-3 right-3 text-amber-500/50 group-hover:text-amber-400 transition-colors">
+                  <Lock className="w-4 h-4" />
+                </div>
+              )}
+              <div className="absolute inset-0 bg-gradient-to-br from-zinc-800/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+              
+              <div className="flex items-start gap-4 relative z-10">
+                <div className={`w-10 h-10 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0 shadow-inner group-hover:scale-105 transition-transform duration-300`}>
+                  <Icon className={`w-5 h-5 ${tool.color}`} />
+                </div>
+                <div className="space-y-1 pt-0.5">
+                  <div className="text-[10px] font-mono text-zinc-500 uppercase tracking-wider">{tool.category}</div>
+                  <h3 className="text-sm font-bold text-zinc-100 group-hover:text-white transition-colors">{tool.title}</h3>
+                  <p className="text-xs text-zinc-400 leading-relaxed pt-1">
+                    {tool.description}
+                  </p>
+                </div>
               </div>
-              <p className="text-xs text-zinc-200 font-mono bg-zinc-950 p-2.5 rounded border border-zinc-800 select-all">
-                {cleanedKeywords}
-              </p>
             </div>
-          )}
-        </div>
-      )}
-
-      {activeTool === 'rewriter' && (
-        <div className="bg-[#0c0c0e] border border-zinc-800 rounded-lg p-6 space-y-4">
-          <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-            <RefreshCw className="w-4 h-4 text-zinc-400" />
-            Title Commercial Rewriter
-          </h3>
-          <p className="text-xs text-zinc-400">
-            Transforms basic filenames or informal descriptions into agency-grade titles.
-          </p>
-
-          <div className="space-y-2">
-            <label className="text-xs font-medium text-zinc-300">Raw Title or Description</label>
-            <input
-              type="text"
-              value={rawTitle}
-              onChange={e => setRawTitle(e.target.value)}
-              className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-xs text-white focus:outline-none focus:border-zinc-600"
-            />
-          </div>
-
-          <button
-            onClick={handleRewriteTitle}
-            className="px-5 py-2 bg-white text-black text-xs font-semibold rounded hover:bg-zinc-200 transition-colors flex items-center gap-1.5 cursor-pointer"
-          >
-            Rewrite Commercial Title
-          </button>
-
-          {rewrittenTitle && (
-            <div className="bg-zinc-900/60 border border-zinc-800 rounded-lg p-4 space-y-2">
-              <div className="flex items-center justify-between text-xs font-semibold text-zinc-200">
-                <span>Commercial Title Result ({rewrittenTitle.length} chars)</span>
-                <button
-                  onClick={() => handleCopy(rewrittenTitle)}
-                  className="text-[10px] text-zinc-400 hover:text-white flex items-center gap-1 cursor-pointer"
-                >
-                  {copied ? <Check className="w-3 h-3 text-white" /> : <Copy className="w-3 h-3" />}
-                  {copied ? 'Copied' : 'Copy'}
-                </button>
-              </div>
-              <p className="text-xs text-zinc-200 font-medium bg-zinc-950 p-2.5 rounded border border-zinc-800 select-all">
-                {rewrittenTitle}
-              </p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {activeTool === 'compliance' && (
-        <div className="bg-[#0c0c0e] border border-zinc-800 rounded-lg p-6 space-y-4">
-          <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-zinc-400" />
-            Marketplace Rules Compliance Standards
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-            <div className="bg-zinc-900/60 border border-zinc-800 p-3.5 rounded-lg space-y-1.5">
-              <div className="font-semibold text-white">Adobe Stock</div>
-              <p className="text-zinc-400 text-[11px]">
-                Requires first 10 keywords ordered strictly by relevance. Max 50 keywords.
-              </p>
-            </div>
-            <div className="bg-zinc-900/60 border border-zinc-800 p-3.5 rounded-lg space-y-1.5">
-              <div className="font-semibold text-white">Shutterstock</div>
-              <p className="text-zinc-400 text-[11px]">
-                Description is the primary search title. Minimum 7 keywords, max 50 keywords.
-              </p>
-            </div>
-            <div className="bg-zinc-900/60 border border-zinc-800 p-3.5 rounded-lg space-y-1.5">
-              <div className="font-semibold text-white">Freepik</div>
-              <p className="text-zinc-400 text-[11px]">
-                Requires concise commercial titles between 10 and 100 characters.
-              </p>
-            </div>
-            <div className="bg-zinc-900/60 border border-zinc-800 p-3.5 rounded-lg space-y-1.5">
-              <div className="font-semibold text-white">Vecteezy</div>
-              <p className="text-zinc-400 text-[11px]">
-                Explicit vector tags required (EPS10, vector background, isolated).
-              </p>
-            </div>
-          </div>
+          );
+        })}
+      </div>
+      
+      {filteredTools.length === 0 && (
+        <div className="py-12 text-center text-zinc-500 flex flex-col items-center justify-center gap-3">
+          <AlertCircle className="w-8 h-8 text-zinc-600" />
+          <p>No tools found matching your criteria.</p>
         </div>
       )}
     </div>

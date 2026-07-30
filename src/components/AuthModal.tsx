@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Lock, Mail, User, ShieldCheck, ArrowRight, CheckCircle2, KeyRound } from 'lucide-react';
+import { X, Lock, Mail, User, ArrowRight, CheckCircle2, KeyRound } from 'lucide-react';
 import { GoogleLogin } from '@react-oauth/google';
 import { AuthUser } from '../types';
 
@@ -50,9 +50,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setIsLoading(true);
 
     try {
+      const deviceId = localStorage.getItem('stockai_device_id') || '';
       const res = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-Device-Id': deviceId
+        },
         body: JSON.stringify({
           email: loginEmail,
           password: loginPassword,
@@ -90,13 +94,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const handleGoogleSuccess = async (credentialResponse: any) => {
     setError('');
-    setSuccessMsg('');
+    setSuccessMsg('Authenticating...');
     setIsLoading(true);
     
     try {
+      const deviceId = localStorage.getItem('stockai_device_id') || '';
       const res = await fetch('/api/auth/google', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-Device-Id': deviceId
+        },
         body: JSON.stringify({
           idToken: credentialResponse.credential,
           deviceFingerprint: {
@@ -119,16 +127,28 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         throw new Error(data.error || 'Google authentication failed.');
       }
 
-      setSuccessMsg('Google Authentication successful! Logging in...');
+      setSuccessMsg('Creating Session...');
+      
       setTimeout(() => {
-        onAuthSuccess(data.user, data.token);
-        onClose();
+        setSuccessMsg('Loading Dashboard...');
+        setTimeout(() => {
+          onAuthSuccess(data.user, data.token);
+          onClose();
+        }, 500);
       }, 500);
     } catch (err: any) {
-      setError(err.message || 'Failed to authenticate with Google.');
+      setError(err.message || 'Google authentication failed. Please try again.');
     } finally {
-      setIsLoading(false);
+      setTimeout(() => {
+        setIsLoading(false);
+      }, 1000);
     }
+  };
+
+  const handleGoogleError = () => {
+    setError('Google Sign-In was cancelled.');
+    setSuccessMsg('');
+    setIsLoading(false);
   };
 
   const handleSignupSubmit = async (e: React.FormEvent) => {
@@ -160,9 +180,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setIsLoading(true);
 
     try {
+      const deviceId = localStorage.getItem('stockai_device_id') || '';
       const res = await fetch('/api/auth/signup', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-Device-Id': deviceId
+        },
         body: JSON.stringify({
           fullName: signupName,
           email: signupEmail,
@@ -196,18 +220,40 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  const handleForgotSubmit = (e: React.FormEvent) => {
+  const handleForgotSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!loginEmail) {
-      setError('Please enter your email address to receive password reset instructions.');
+    setError('');
+    setSuccessMsg('');
+
+    if (!loginEmail || !loginEmail.includes('@')) {
+      setError('Please enter a valid email address to receive password reset instructions.');
       return;
     }
-    setSuccessMsg('Password reset instructions have been sent to your email.');
+
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: loginEmail })
+      });
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to request password reset.');
+      }
+
+      setSuccessMsg(data.message || 'Password reset instructions have been sent to your email.');
+    } catch (err: any) {
+      setError(err.message || 'Something went wrong.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 font-sans text-zinc-200">
-      <div className="bg-[#0c0c0e] border border-zinc-800 rounded-lg max-w-md w-full p-6 space-y-5 shadow-2xl relative">
+    <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-xl flex items-center justify-center p-4 font-sans text-zinc-200 animate-fade-in">
+      <div className="bg-[#0c0c0e]/95 border border-zinc-800/80 rounded-xl max-w-md w-full p-7 space-y-6 shadow-modal relative animate-scale-in">
         {/* Close */}
         {!hideClose && (
           <button
@@ -219,48 +265,50 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         )}
 
         {/* Brand Header */}
-        <div className="text-center space-y-1.5 pt-2">
-          <div className="w-10 h-10 rounded-lg bg-white text-black font-bold flex items-center justify-center mx-auto shadow-md">
-            <Lock className="w-5 h-5 text-black" />
+        <div className="text-center space-y-2 pt-2">
+          <div className="w-12 h-12 rounded-xl bg-white text-black font-bold flex items-center justify-center mx-auto shadow-md">
+            <Lock className="w-6 h-6 text-black" />
           </div>
-          <h2 className="text-xl font-bold text-white tracking-tight">StockAI Authentication</h2>
-          <p className="text-xs text-zinc-400">
-            {mode === 'login' && 'Sign in to access your contributor workspace'}
-            {mode === 'signup' && 'Create a new contributor account'}
-            {mode === 'forgot' && 'Reset your account security credentials'}
+          <h2 className="text-2xl font-bold text-white tracking-tight">StockAI Workspace</h2>
+          <p className="text-xs text-zinc-400 max-w-xs mx-auto">
+            {mode === 'login' && 'Sign in to access your contributor workspace.'}
+            {mode === 'signup' && 'Create a new contributor account.'}
+            {mode === 'forgot' && 'Reset your account security credentials.'}
           </p>
         </div>
 
-        {/* Mode Selector Tabs */}
-        <div className="grid grid-cols-2 bg-zinc-950 p-1 border border-zinc-800 rounded-md text-xs font-semibold">
-          <button
-            type="button"
-            onClick={() => { setMode('login'); setError(''); setSuccessMsg(''); }}
-            className={`py-1.5 rounded transition-colors cursor-pointer ${
-              mode === 'login' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'
-            }`}
-          >
-            Sign In
-          </button>
-          <button
-            type="button"
-            onClick={() => { setMode('signup'); setError(''); setSuccessMsg(''); }}
-            className={`py-1.5 rounded transition-colors cursor-pointer ${
-              mode === 'signup' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'
-            }`}
-          >
-            Create Account
-          </button>
-        </div>
+        {/* Mode Selector Tabs (Hidden in Forgot Password mode) */}
+        {mode !== 'forgot' && (
+          <div className="grid grid-cols-2 bg-zinc-950 p-1 border border-zinc-800/60 rounded-lg text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => { setMode('login'); setError(''); setSuccessMsg(''); }}
+              className={`py-2 rounded-md transition-all duration-200 cursor-pointer ${
+                mode === 'login' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/50'
+              }`}
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMode('signup'); setError(''); setSuccessMsg(''); }}
+              className={`py-2 rounded-md transition-all duration-200 cursor-pointer ${
+                mode === 'signup' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/50'
+              }`}
+            >
+              Create Account
+            </button>
+          </div>
+        )}
 
         {/* Notifications */}
         {error && (
-          <div className="p-3 bg-red-950/60 border border-red-900/80 rounded text-xs text-red-300">
+          <div className="p-3 bg-red-950/60 border border-red-900/80 rounded-lg text-xs text-red-300 animate-fade-in-up">
             {error}
           </div>
         )}
         {successMsg && (
-          <div className="p-3 bg-emerald-950/60 border border-emerald-900/80 rounded text-xs text-emerald-300 flex items-center gap-2">
+          <div className="p-3 bg-emerald-950/60 border border-emerald-900/80 rounded-lg text-xs text-emerald-300 flex items-center gap-2 animate-fade-in-up">
             <CheckCircle2 className="w-4 h-4 shrink-0" />
             <span>{successMsg}</span>
           </div>
@@ -268,76 +316,83 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         {/* Login Form */}
         {mode === 'login' && (
-          <form onSubmit={handleLoginSubmit} className="space-y-4">
+          <form onSubmit={handleLoginSubmit} className="space-y-4 animate-fade-in">
             <div className="space-y-1.5">
-              <label className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Email Address</label>
-              <div className="relative">
-                <Mail className="w-4 h-4 text-zinc-500 absolute left-3 top-2.5" />
+              <label className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">Email Address</label>
+              <div className="relative group">
+                <Mail className="w-4 h-4 text-zinc-500 absolute left-3.5 top-3 transition-colors group-focus-within:text-white" />
                 <input
                   type="email"
                   required
                   placeholder="contributor@example.com"
                   value={loginEmail}
                   onChange={e => setLoginEmail(e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:border-zinc-600"
+                  className="w-full bg-zinc-950/80 border border-zinc-800 rounded-lg pl-10 pr-4 py-2.5 text-sm text-white focus:outline-none focus:border-zinc-600 focus:bg-zinc-900 transition-all"
                 />
               </div>
             </div>
 
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <label className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Password</label>
+                <label className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">Password</label>
                 <button
                   type="button"
-                  onClick={() => setMode('forgot')}
-                  className="text-[11px] text-zinc-400 hover:text-white"
+                  onClick={() => { setMode('forgot'); setError(''); setSuccessMsg(''); }}
+                  className="text-[11px] font-semibold text-zinc-400 hover:text-white transition-colors cursor-pointer"
                 >
                   Forgot Password?
                 </button>
               </div>
-              <div className="relative">
-                <KeyRound className="w-4 h-4 text-zinc-500 absolute left-3 top-2.5" />
+              <div className="relative group">
+                <KeyRound className="w-4 h-4 text-zinc-500 absolute left-3.5 top-3 transition-colors group-focus-within:text-white" />
                 <input
                   type="password"
                   required
                   placeholder="••••••••••••"
                   value={loginPassword}
                   onChange={e => setLoginPassword(e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:border-zinc-600"
+                  className="w-full bg-zinc-950/80 border border-zinc-800 rounded-lg pl-10 pr-4 py-2.5 text-sm text-white focus:outline-none focus:border-zinc-600 focus:bg-zinc-900 transition-all"
                 />
               </div>
             </div>
 
             <div className="flex items-center justify-between text-xs text-zinc-400 pt-1">
-              <label className="flex items-center gap-2 cursor-pointer">
+              <label className="flex items-center gap-2 cursor-pointer group">
                 <input
                   type="checkbox"
                   checked={rememberMe}
                   onChange={e => setRememberMe(e.target.checked)}
-                  className="rounded bg-zinc-900 border-zinc-800 text-white focus:ring-0"
+                  className="rounded border-zinc-700 bg-zinc-900 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-zinc-900 cursor-pointer"
                 />
-                <span>Remember this device</span>
+                <span className="group-hover:text-zinc-300 transition-colors">Remember this device</span>
               </label>
-              <span className="text-[10px] font-mono text-zinc-500">1 Active Device Enforcement</span>
+              <span className="text-[10px] font-mono text-zinc-500 bg-zinc-900/50 px-2 py-0.5 rounded border border-zinc-800/50">1 Device Only</span>
             </div>
 
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-2.5 bg-white text-black hover:bg-zinc-200 font-semibold text-xs rounded transition-colors cursor-pointer flex items-center justify-center gap-2"
+              className={`w-full py-3 bg-white text-black hover:bg-zinc-200 font-bold text-sm rounded-lg transition-all duration-200 cursor-pointer flex items-center justify-center gap-2 ${isLoading ? 'opacity-80 cursor-not-allowed' : 'shadow-[0_0_15px_rgba(255,255,255,0.1)] hover:shadow-[0_0_20px_rgba(255,255,255,0.25)]'}`}
             >
-              {isLoading ? 'Authenticating...' : 'Sign In To Workspace'}
-              <ArrowRight className="w-4 h-4" />
+              {isLoading ? (
+                <span className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin" /> Authenticating...
+                </span>
+              ) : (
+                <>Sign In To Workspace <ArrowRight className="w-4 h-4" /></>
+              )}
             </button>
+
             <div className="relative flex items-center py-2">
               <div className="flex-grow border-t border-zinc-800"></div>
-              <span className="flex-shrink-0 mx-4 text-zinc-500 text-xs">Or continue with</span>
+              <span className="flex-shrink-0 mx-4 text-zinc-500 text-[11px] font-medium uppercase tracking-wider">Or</span>
               <div className="flex-grow border-t border-zinc-800"></div>
             </div>
+            
             <div className="flex justify-center w-full">
               <GoogleLogin
                 onSuccess={handleGoogleSuccess}
-                onError={() => setError('Google Authentication was unsuccessful or canceled.')}
+                onError={handleGoogleError}
                 theme="filled_black"
                 shape="rectangular"
                 width="100%"
@@ -349,92 +404,102 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         {/* Signup Form */}
         {mode === 'signup' && (
-          <form onSubmit={handleSignupSubmit} className="space-y-3.5">
-            <div className="space-y-1">
-              <label className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Full Name</label>
-              <div className="relative">
-                <User className="w-4 h-4 text-zinc-500 absolute left-3 top-2.5" />
+          <form onSubmit={handleSignupSubmit} className="space-y-4 animate-fade-in">
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">Full Name</label>
+              <div className="relative group">
+                <User className="w-4 h-4 text-zinc-500 absolute left-3.5 top-3 transition-colors group-focus-within:text-white" />
                 <input
                   type="text"
                   required
-                  placeholder="Fahad Hussain"
+                  placeholder="e.g. Fahad Hussain"
                   value={signupName}
                   onChange={e => setSignupName(e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:border-zinc-600"
+                  className="w-full bg-zinc-950/80 border border-zinc-800 rounded-lg pl-10 pr-4 py-2.5 text-sm text-white focus:outline-none focus:border-zinc-600 focus:bg-zinc-900 transition-all"
                 />
               </div>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Email Address</label>
-              <div className="relative">
-                <Mail className="w-4 h-4 text-zinc-500 absolute left-3 top-2.5" />
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">Email Address</label>
+              <div className="relative group">
+                <Mail className="w-4 h-4 text-zinc-500 absolute left-3.5 top-3 transition-colors group-focus-within:text-white" />
                 <input
                   type="email"
                   required
                   placeholder="contributor@example.com"
                   value={signupEmail}
                   onChange={e => setSignupEmail(e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:border-zinc-600"
+                  className="w-full bg-zinc-950/80 border border-zinc-800 rounded-lg pl-10 pr-4 py-2.5 text-sm text-white focus:outline-none focus:border-zinc-600 focus:bg-zinc-900 transition-all"
                 />
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <label className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Password</label>
-                <input
-                  type="password"
-                  required
-                  placeholder="••••••••"
-                  value={signupPassword}
-                  onChange={e => setSignupPassword(e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs text-white focus:outline-none focus:border-zinc-600"
-                />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">Password</label>
+                <div className="relative group">
+                  <KeyRound className="w-4 h-4 text-zinc-500 absolute left-3 top-3 transition-colors group-focus-within:text-white" />
+                  <input
+                    type="password"
+                    required
+                    placeholder="••••••••"
+                    value={signupPassword}
+                    onChange={e => setSignupPassword(e.target.value)}
+                    className="w-full bg-zinc-950/80 border border-zinc-800 rounded-lg pl-9 pr-3 py-2.5 text-sm text-white focus:outline-none focus:border-zinc-600 focus:bg-zinc-900 transition-all"
+                  />
+                </div>
               </div>
-              <div className="space-y-1">
-                <label className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Confirm</label>
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">Confirm</label>
                 <input
                   type="password"
                   required
                   placeholder="••••••••"
                   value={signupConfirmPassword}
                   onChange={e => setSignupConfirmPassword(e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs text-white focus:outline-none focus:border-zinc-600"
+                  className="w-full bg-zinc-950/80 border border-zinc-800 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-zinc-600 focus:bg-zinc-900 transition-all"
                 />
               </div>
             </div>
 
-            <div className="flex items-start gap-2 pt-1">
+            <div className="flex items-start gap-2.5 pt-1 bg-zinc-900/30 p-2.5 rounded-lg border border-zinc-800/50">
               <input
                 type="checkbox"
                 id="terms"
                 checked={acceptTerms}
                 onChange={e => setAcceptTerms(e.target.checked)}
-                className="mt-0.5 rounded bg-zinc-900 border-zinc-800 text-white focus:ring-0"
+                className="mt-0.5 rounded border-zinc-700 bg-zinc-900 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-zinc-900 cursor-pointer"
               />
-              <label htmlFor="terms" className="text-[11px] text-zinc-400 leading-tight cursor-pointer">
-                I accept the StockAI Terms of Service and Privacy Policy. Default role: <span className="text-white font-semibold">Contributor</span>.
+              <label htmlFor="terms" className="text-[11px] text-zinc-400 leading-relaxed cursor-pointer select-none">
+                I accept the <span className="text-zinc-300 hover:text-white transition-colors">Terms of Service</span> and <span className="text-zinc-300 hover:text-white transition-colors">Privacy Policy</span>. Account defaults to <span className="text-white font-semibold">Contributor</span>.
               </label>
             </div>
 
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-2.5 bg-white text-black hover:bg-zinc-200 font-semibold text-xs rounded transition-colors cursor-pointer flex items-center justify-center gap-2"
+              className={`w-full py-3 bg-white text-black hover:bg-zinc-200 font-bold text-sm rounded-lg transition-all duration-200 cursor-pointer flex items-center justify-center gap-2 ${isLoading ? 'opacity-80 cursor-not-allowed' : 'shadow-[0_0_15px_rgba(255,255,255,0.1)] hover:shadow-[0_0_20px_rgba(255,255,255,0.25)]'}`}
             >
-              {isLoading ? 'Creating Account...' : 'Register Contributor Account'}
-              <ArrowRight className="w-4 h-4" />
+              {isLoading ? (
+                <span className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin" /> Creating Account...
+                </span>
+              ) : (
+                <>Register Contributor Account <ArrowRight className="w-4 h-4" /></>
+              )}
             </button>
+
             <div className="relative flex items-center py-2">
               <div className="flex-grow border-t border-zinc-800"></div>
-              <span className="flex-shrink-0 mx-4 text-zinc-500 text-xs">Or continue with</span>
+              <span className="flex-shrink-0 mx-4 text-zinc-500 text-[11px] font-medium uppercase tracking-wider">Or</span>
               <div className="flex-grow border-t border-zinc-800"></div>
             </div>
+            
             <div className="flex justify-center w-full">
               <GoogleLogin
                 onSuccess={handleGoogleSuccess}
-                onError={() => setError('Google Authentication was unsuccessful or canceled.')}
+                onError={handleGoogleError}
                 theme="filled_black"
                 shape="rectangular"
                 width="100%"
@@ -444,29 +509,39 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </form>
         )}
 
-        {/* Forgot Password */}
+        {/* Forgot Password Form */}
         {mode === 'forgot' && (
-          <form onSubmit={handleForgotSubmit} className="space-y-4">
-            <p className="text-xs text-zinc-400">
-              Enter your registered account email address. We will send a secure password reset link to your inbox.
-            </p>
-            <div className="space-y-1">
-              <label className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Email Address</label>
-              <input
-                type="email"
-                required
-                placeholder="contributor@example.com"
-                value={loginEmail}
-                onChange={e => setLoginEmail(e.target.value)}
-                className="w-full bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-xs text-white focus:outline-none focus:border-zinc-600"
-              />
+          <form onSubmit={handleForgotSubmit} className="space-y-5 animate-fade-in">
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">Account Email</label>
+              <div className="relative group">
+                <Mail className="w-4 h-4 text-zinc-500 absolute left-3.5 top-3 transition-colors group-focus-within:text-white" />
+                <input
+                  type="email"
+                  required
+                  placeholder="contributor@example.com"
+                  value={loginEmail}
+                  onChange={e => setLoginEmail(e.target.value)}
+                  className="w-full bg-zinc-950/80 border border-zinc-800 rounded-lg pl-10 pr-4 py-2.5 text-sm text-white focus:outline-none focus:border-zinc-600 focus:bg-zinc-900 transition-all"
+                />
+              </div>
             </div>
-            <button
-              type="submit"
-              className="w-full py-2 bg-white text-black font-semibold text-xs rounded hover:bg-zinc-200 transition-colors"
-            >
-              Send Password Reset Link
-            </button>
+            <div className="space-y-3 pt-2">
+              <button
+                type="submit"
+                disabled={isLoading}
+                className={`w-full py-3 bg-white text-black hover:bg-zinc-200 font-bold text-sm rounded-lg transition-all duration-200 cursor-pointer ${isLoading ? 'opacity-80 cursor-not-allowed' : 'shadow-[0_0_15px_rgba(255,255,255,0.1)] hover:shadow-[0_0_20px_rgba(255,255,255,0.25)]'}`}
+              >
+                {isLoading ? 'Sending...' : 'Send Password Reset Link'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setMode('login'); setError(''); setSuccessMsg(''); }}
+                className="w-full py-2.5 bg-transparent hover:bg-zinc-900 text-zinc-400 hover:text-white font-medium text-xs rounded-lg transition-colors cursor-pointer"
+              >
+                Back to Sign In
+              </button>
+            </div>
           </form>
         )}
       </div>

@@ -1005,7 +1005,296 @@ router.post('/users/bulk-delete', async (req: Request, res: Response) => {
   return res.json({ success: true, deleted, skipped });
 });
 
-// ─── System Settings Routes ───────────────────────────────────────────────────────────────────────────
+// ─── Enterprise API Key Pool Management ──────────────────────────────────
+
+// GET /api/admin/key-pool/stats — Pool stats for all providers
+router.get('/key-pool/stats', async (req: Request, res: Response) => {
+  const { ApiKeyManager } = await import('../core/ai/api-key-manager');
+  const { AiGateway } = await import('../core/ai/gateway');
+  return res.json({
+    poolStats: ApiKeyManager.getAllPoolStats(),
+    circuitStatus: AiGateway.getCircuitStatus(),
+    providerHealth: AiGateway.getHealth(),
+    encryptionEnabled: ApiKeyManager.isEncryptionEnabled()
+  });
+});
+
+// GET /api/admin/key-pool/:provider — List all keys for a provider (masked)
+router.get('/key-pool/:provider', async (req: Request, res: Response) => {
+  const { ApiKeyManager } = await import('../core/ai/api-key-manager');
+  const { provider } = req.params;
+  const safeKeys = ApiKeyManager.getSafeKeys(provider);
+  const stats = ApiKeyManager.getPoolStats(provider);
+  return res.json({ provider, keys: safeKeys, stats });
+});
+
+// POST /api/admin/key-pool/:provider — Add a new key to a provider's pool
+router.post('/key-pool/:provider', async (req: Request, res: Response) => {
+  const { ApiKeyManager } = await import('../core/ai/api-key-manager');
+  const { provider } = req.params;
+  const { key, label } = req.body;
+  if (!key || typeof key !== 'string' || key.trim().length < 8) {
+    return res.status(400).json({ error: 'A valid API key is required (minimum 8 characters).' });
+  }
+  try {
+    const added = ApiKeyManager.addKey(provider, key.trim(), label || undefined);
+    await userStore.logAudit({
+      id: `audit_${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      adminEmail: req.auth!.user.email,
+      action: 'API_KEY_ADDED',
+      targetUser: 'SYSTEM',
+      details: `Added API key "${added.label}" for provider "${provider}" (encrypted: ${ApiKeyManager.isEncryptionEnabled()}).`
+    });
+    // Return safe version (no raw key)
+    const { key: _rawKey, ...safe } = added;
+    return res.json({ success: true, key: { ...safe, maskedKey: ApiKeyManager.maskKey(key.trim()) } });
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message });
+  }
+});
+
+// PUT /api/admin/key-pool/key/:keyId — Edit a key (label, key value, or enabled state)
+router.put('/key-pool/key/:keyId', async (req: Request, res: Response) => {
+  const { ApiKeyManager } = await import('../core/ai/api-key-manager');
+  const { keyId } = req.params;
+  const { label, key, isEnabled } = req.body;
+  const updated = ApiKeyManager.editKey(keyId, { label, key: key?.trim(), isEnabled });
+  if (!updated) return res.status(404).json({ error: 'Key not found.' });
+  const { key: _rawKey, ...safe } = updated;
+  return res.json({ success: true, key: safe });
+});
+
+// DELETE /api/admin/key-pool/key/:keyId — Delete a key
+router.delete('/key-pool/key/:keyId', async (req: Request, res: Response) => {
+  const { ApiKeyManager } = await import('../core/ai/api-key-manager');
+  const { keyId } = req.params;
+  const deleted = ApiKeyManager.deleteKey(keyId);
+  if (!deleted) return res.status(404).json({ error: 'Key not found.' });
+  await userStore.logAudit({
+    id: `audit_${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    adminEmail: req.auth!.user.email,
+    action: 'API_KEY_DELETED',
+    targetUser: 'SYSTEM',
+    details: `Deleted API key ${keyId}.`
+  });
+  return res.json({ success: true });
+});
+
+// POST /api/admin/key-pool/key/:keyId/enable — Enable a specific key
+router.post('/key-pool/key/:keyId/enable', async (req: Request, res: Response) => {
+  const { ApiKeyManager } = await import('../core/ai/api-key-manager');
+  ApiKeyManager.enableKey(req.params.keyId);
+  return res.json({ success: true });
+});
+
+// POST /api/admin/key-pool/key/:keyId/disable — Disable a specific key
+router.post('/key-pool/key/:keyId/disable', async (req: Request, res: Response) => {
+  const { ApiKeyManager } = await import('../core/ai/api-key-manager');
+  ApiKeyManager.disableKey(req.params.keyId);
+  return res.json({ success: true });
+});
+
+// POST /api/admin/key-pool/key/:keyId/reset — Reset a single key from cooldown/failure
+router.post('/key-pool/key/:keyId/reset', async (req: Request, res: Response) => {
+  const { ApiKeyManager } = await import('../core/ai/api-key-manager');
+  const resetOk = ApiKeyManager.resetKey(req.params.keyId);
+  if (!resetOk) return res.status(404).json({ error: 'Key not found.' });
+  return res.json({ success: true });
+});
+
+// POST /api/admin/key-pool/:provider/reset-failed — Bulk reset all failed/cooldown keys for a provider
+router.post('/key-pool/:provider/reset-failed', async (req: Request, res: Response) => {
+  const { ApiKeyManager } = await import('../core/ai/api-key-manager');
+  const { provider } = req.params;
+  const count = ApiKeyManager.resetFailedKeys(provider);
+  await userStore.logAudit({
+    id: `audit_${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    adminEmail: req.auth!.user.email,
+    action: 'API_KEYS_BULK_RESET',
+    targetUser: 'SYSTEM',
+    details: `Bulk-reset ${count} failed/cooldown keys for provider "${provider}".`
+  });
+  return res.json({ success: true, resetCount: count, provider });
+});
+
+// POST /api/admin/key-pool/:provider/strategy — Set rotation strategy
+router.post('/key-pool/:provider/strategy', async (req: Request, res: Response) => {
+  const { ApiKeyManager } = await import('../core/ai/api-key-manager');
+  const { strategy } = req.body;
+  if (!['round-robin', 'lru', 'health-based'].includes(strategy)) {
+    return res.status(400).json({ error: 'Invalid strategy. Use: round-robin, lru, health-based' });
+  }
+  ApiKeyManager.setStrategy(req.params.provider, strategy);
+  return res.json({ success: true, provider: req.params.provider, strategy });
+});
+
+// POST /api/admin/key-pool/key/:keyId/validate — Lightweight auth validation (faster than full test)
+router.post('/key-pool/key/:keyId/validate', async (req: Request, res: Response) => {
+  const { AiGateway } = await import('../core/ai/gateway');
+  const { keyId } = req.params;
+  try {
+    const result = await AiGateway.validatePoolKey(keyId);
+    return res.json({ keyId, ...result });
+  } catch (err: any) {
+    return res.status(500).json({ valid: false, message: err?.message || 'Validation failed' });
+  }
+});
+
+// POST /api/admin/key-pool/key/:keyId/test — Test an individual key (full generation test)
+router.post('/key-pool/key/:keyId/test', async (req: Request, res: Response) => {
+  const { ApiKeyManager } = await import('../core/ai/api-key-manager');
+  const keys = Array.from(ApiKeyManager.listAllKeys().values()).flat();
+  const found = keys.find(k => k.id === req.params.keyId);
+  if (!found) return res.status(404).json({ error: 'Key not found.' });
+
+  const rawKey = ApiKeyManager.getRawKey(found.id);
+  if (!rawKey) return res.status(404).json({ error: 'Could not retrieve key.' });
+
+  try {
+    let testOk = false;
+    let message = '';
+    const provId = found.provider;
+    const start = Date.now();
+
+    if (provId === 'google-gemini') {
+      const { GoogleGenAI } = await import('@google/genai');
+      const ai = new GoogleGenAI({ apiKey: rawKey });
+      const r = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: 'OK' });
+      testOk = !!r;
+      message = `Google Gemini OK — gemini-2.5-flash`;
+    } else if (provId === 'openai') {
+      const r = await fetch('https://api.openai.com/v1/models', { headers: { Authorization: `Bearer ${rawKey}` } });
+      testOk = r.ok;
+      const modelCount = testOk ? ((await r.json())?.data?.length || '?') : 0;
+      message = testOk ? `OpenAI OK — ${modelCount} models available` : `OpenAI failed — HTTP ${r.status}`;
+    } else if (provId === 'anthropic') {
+      const r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'x-api-key': rawKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'claude-3-haiku-20240307', max_tokens: 5, messages: [{ role: 'user', content: 'Hi' }] })
+      });
+      testOk = r.ok;
+      message = testOk ? `Anthropic OK — claude-3-haiku` : `Anthropic failed — HTTP ${r.status}`;
+    } else if (provId === 'groq') {
+      const r = await fetch('https://api.groq.com/openai/v1/models', { headers: { Authorization: `Bearer ${rawKey}` } });
+      testOk = r.ok;
+      const modelCount = testOk ? ((await r.json())?.data?.length || '?') : 0;
+      message = testOk ? `Groq OK — ${modelCount} models available` : `Groq failed — HTTP ${r.status}`;
+    } else if (provId === 'xai') {
+      const r = await fetch('https://api.x.ai/v1/models', { headers: { Authorization: `Bearer ${rawKey}` } });
+      testOk = r.ok;
+      message = testOk ? `xAI OK — HTTP ${r.status}` : `xAI failed — HTTP ${r.status}`;
+    } else if (provId === 'openrouter') {
+      const r = await fetch('https://openrouter.ai/api/v1/models', { headers: { Authorization: `Bearer ${rawKey}` } });
+      testOk = r.ok;
+      message = testOk ? `OpenRouter OK — HTTP ${r.status}` : `OpenRouter failed — HTTP ${r.status}`;
+    } else {
+      return res.status(400).json({ status: 'error', message: `Unknown provider: ${provId}` });
+    }
+
+    const latencyMs = Date.now() - start;
+    if (testOk) {
+      ApiKeyManager.recordKeySuccess(found.id, latencyMs);
+    } else {
+      ApiKeyManager.recordKeyFailure(found.id, 'auth_error', message);
+    }
+    return res.json({ status: testOk ? 'ok' : 'error', message, latencyMs });
+  } catch (err: any) {
+    const errMsg = (err instanceof Error ? err.message : String(err)) || 'Test failed';
+    ApiKeyManager.recordKeyFailure(found.id, 'transient', errMsg);
+    return res.status(500).json({ status: 'error', message: ApiKeyManager.sanitizeKeyFromMessage(errMsg) });
+  }
+});
+
+// POST /api/admin/circuit/reset/:provider — Manually reset a provider circuit
+router.post('/circuit/reset/:provider', async (req: Request, res: Response) => {
+  const { AiGateway } = await import('../core/ai/gateway');
+  AiGateway.resetCircuit(req.params.provider);
+  await userStore.logAudit({
+    id: `audit_${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    adminEmail: req.auth!.user.email,
+    action: 'CIRCUIT_RESET',
+    targetUser: 'SYSTEM',
+    details: `Circuit breaker manually reset for provider "${req.params.provider}".`
+  });
+  return res.json({ success: true, provider: req.params.provider });
+});
+
+// GET /api/admin/provider-overview — Unified provider status (pool + health + circuit + models)
+router.get('/provider-overview', async (req: Request, res: Response) => {
+  const { AiGateway } = await import('../core/ai/gateway');
+  try {
+    const overview = AiGateway.getProviderOverview();
+    return res.json({ providers: overview, lastUpdated: new Date().toISOString() });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to get provider overview.' });
+  }
+});
+
+// GET /api/admin/provider/:provider/logs — Get AI diagnostics logs for a specific provider
+router.get('/provider/:provider/logs', async (req: Request, res: Response) => {
+  const { AiGateway } = await import('../core/ai/gateway');
+  const { provider } = req.params;
+  const { limit = '50' } = req.query as Record<string, string>;
+  const allLogs = AiGateway.getDiagnostics();
+  const providerLogs = allLogs
+    .filter((l: any) => l.providerUsed === provider || l.finalProvider === provider)
+    .slice(0, Math.min(parseInt(limit, 10) || 50, 200));
+  return res.json({ provider, logs: providerLogs, total: providerLogs.length });
+});
+
+// GET /api/admin/provider/all/logs — Get all AI diagnostics logs
+router.get('/provider/all/logs', async (req: Request, res: Response) => {
+  const { AiGateway } = await import('../core/ai/gateway');
+  const { limit = '100' } = req.query as Record<string, string>;
+  const allLogs = AiGateway.getDiagnostics();
+  return res.json({
+    logs: allLogs.slice(0, Math.min(parseInt(limit, 10) || 100, 500)),
+    total: allLogs.length
+  });
+});
+
+// POST /api/admin/provider/:provider/models/:modelId/toggle — Enable or disable a model
+router.post('/provider/:provider/models/:modelId/toggle', async (req: Request, res: Response) => {
+  const { AiGateway } = await import('../core/ai/gateway');
+  const { provider, modelId } = req.params;
+  const { isEnabled } = req.body;
+  if (typeof isEnabled !== 'boolean') {
+    return res.status(400).json({ error: 'isEnabled (boolean) is required.' });
+  }
+  AiGateway.setModelEnabled(provider, modelId, isEnabled);
+  await userStore.logAudit({
+    id: `audit_${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    adminEmail: req.auth!.user.email,
+    action: 'MODEL_TOGGLED',
+    targetUser: 'SYSTEM',
+    details: `Model "${modelId}" for provider "${provider}" set to ${isEnabled ? 'ENABLED' : 'DISABLED'}.`
+  });
+  return res.json({ success: true, provider, modelId, isEnabled });
+});
+
+// POST /api/admin/provider/:provider/models/:modelId/set-default — Set admin default model
+router.post('/provider/:provider/models/:modelId/set-default', async (req: Request, res: Response) => {
+  const { AiGateway } = await import('../core/ai/gateway');
+  const { provider, modelId } = req.params;
+  AiGateway.setDefaultModel(provider, modelId);
+  await userStore.logAudit({
+    id: `audit_${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    adminEmail: req.auth!.user.email,
+    action: 'DEFAULT_MODEL_SET',
+    targetUser: 'SYSTEM',
+    details: `Default model for provider "${provider}" set to "${modelId}".`
+  });
+  return res.json({ success: true, provider, modelId });
+});
+
+// ─── System Settings Routes ─────────────────────────────────────────────────────────────────────────────────────────────
 
 // GET /api/admin/system-settings — Return current global settings
 router.get('/system-settings', (req: Request, res: Response) => {

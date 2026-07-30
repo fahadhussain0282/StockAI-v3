@@ -9,8 +9,13 @@ import { teamRouter } from './src/core/teams';
 import { billingRouter } from './src/core/billing';
 import { adminRouter, systemSettingsStore } from './src/routes/admin-routes';
 import { aiRouter } from './src/routes/ai-routes';
+import { ApiKeyManager } from './src/core/ai/api-key-manager';
 
 dotenv.config();
+
+// ─── Seed Enterprise API Key Pool from Environment Variables ─────────────────
+// This runs before any request, ensuring all ENV keys are in the pool at startup
+ApiKeyManager.seedFromEnvironment();
 
 // ─── Global Stability: Unhandled Rejections + Exceptions ─────────────────────
 process.on('unhandledRejection', (reason: any) => {

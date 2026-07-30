@@ -29,6 +29,11 @@ export class SessionService {
 
   /**
    * Validates a session token. Returns the UserRecord if valid.
+   *
+   * SESSION PERSISTENCE FIX: We validate the deviceId against the SESSION RECORD (not
+   * user.activeDeviceId). This ensures that after browser refresh, the same token+device
+   * combination always passes validation. user.activeDeviceId is only used for admin
+   * revoke-device operations and should not gate session validation.
    */
   public static async validateSession(token: string, deviceId?: string): Promise<{ user: UserRecord; sessionToken: string } | null> {
     const session = await userStore.findSessionByToken(token);
@@ -43,11 +48,16 @@ export class SessionService {
     const user = await userStore.findUserById(session.userId);
     if (!user) return null;
 
-    // Enforce 1-device limit dynamically during token validation (Section 8)
-    if (deviceId && user.activeDeviceId && user.activeDeviceId !== deviceId) {
-      // This means the user logged in elsewhere since this token was issued
-      await userStore.deleteSession(token);
-      return null;
+    // Device validation: compare against the SESSION's registered deviceId (not user.activeDeviceId)
+    // This is the key fix for session persistence across browser refreshes.
+    // If the device presenting the token doesn't match what the session was created with,
+    // it likely means a stolen token or a device switch — revoke for security.
+    if (deviceId && session.deviceId && session.deviceId !== deviceId) {
+      // Admins bypass device-lock (they may access from admin panel on different device context)
+      if (user.role !== 'admin' && user.role !== 'team_owner') {
+        await userStore.deleteSession(token);
+        return null;
+      }
     }
 
     return { user, sessionToken: token };

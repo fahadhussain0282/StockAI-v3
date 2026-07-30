@@ -30,6 +30,8 @@ export interface UserRecord {
   updatedAt: string;
   lastLoginAt: string;
   totalGenerations: number;
+  totalPrompts: number;
+  totalCsvExports: number;
 }
 
 export interface SessionRecord {

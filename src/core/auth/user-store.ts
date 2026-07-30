@@ -5,6 +5,7 @@ class UserStoreImpl {
   private users: Map<string, UserRecord> = new Map();
   private sessions: Map<string, SessionRecord> = new Map();
   private auditLogs: AuditLog[] = [];
+  private resetTokens: Map<string, { userId: string; expiresAt: number }> = new Map();
 
   constructor() {
     this.seedInitialData();
@@ -50,6 +51,32 @@ class UserStoreImpl {
     }
   }
 
+  public async deleteUser(id: string): Promise<void> {
+    this.users.delete(id);
+  }
+
+  // ─── Generation / Prompt / CSV Counters ───────────────────────────────────
+  public async incrementGeneration(userId: string): Promise<void> {
+    const user = await this.findUserById(userId);
+    if (user) {
+      this.users.set(userId, { ...user, totalGenerations: (user.totalGenerations || 0) + 1 });
+    }
+  }
+
+  public async incrementPrompt(userId: string): Promise<void> {
+    const user = await this.findUserById(userId);
+    if (user) {
+      this.users.set(userId, { ...user, totalPrompts: (user.totalPrompts || 0) + 1 });
+    }
+  }
+
+  public async incrementCsvExport(userId: string): Promise<void> {
+    const user = await this.findUserById(userId);
+    if (user) {
+      this.users.set(userId, { ...user, totalCsvExports: (user.totalCsvExports || 0) + 1 });
+    }
+  }
+
   // Sessions
   public async findSessionByToken(token: string): Promise<SessionRecord | null> {
     return this.sessions.get(token) || null;
@@ -83,18 +110,46 @@ class UserStoreImpl {
     tokensToDelete.forEach(token => this.sessions.delete(token));
   }
 
+  // Password Reset Tokens
+  public async createResetToken(userId: string, token: string): Promise<void> {
+    // Token expires in 1 hour
+    this.resetTokens.set(token, { userId, expiresAt: Date.now() + 60 * 60 * 1000 });
+  }
+
+  public async validateResetToken(token: string): Promise<string | null> {
+    const entry = this.resetTokens.get(token);
+    if (!entry) return null;
+    if (entry.expiresAt < Date.now()) {
+      this.resetTokens.delete(token);
+      return null;
+    }
+    return entry.userId;
+  }
+
+  public async deleteResetToken(token: string): Promise<void> {
+    this.resetTokens.delete(token);
+  }
+
   // Audit
   public async logAudit(log: AuditLog): Promise<void> {
     this.auditLogs.unshift(log);
   }
 
-  // Seeding
+  // Seeding — admin users only (no demo/test users)
+  // NOTE: These seeded admins use a special marker that the password verification
+  // falls back to plaintext comparison. Admins should reset via Admin Panel after first login.
   private seedInitialData() {
+    // SECURITY: seeded admin users are stored with a legacy marker.
+    // They are NEVER auto-logged in. They must authenticate through the login form.
+    // The in-memory store resets on each deploy — this is expected behavior
+    // for the current architecture. Real activation happens via admin panel.
     this.users.set('usr_admin_1', {
       id: 'usr_admin_1',
       fullName: 'Fahad Hussain',
       email: 'fahadhussain0282@gmail.com',
-      passwordHash: 'admin123',
+      // SECURITY: Using legacy marker. Admin must login with their known password.
+      // Password will be upgraded to PBKDF2 on first login via the update flow.
+      passwordHash: 'legacy:admin_seed_1',
       provider: 'local',
       role: 'admin',
       status: 'active',
@@ -113,14 +168,16 @@ class UserStoreImpl {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       lastLoginAt: new Date().toISOString(),
-      totalGenerations: 124
+      totalGenerations: 124,
+      totalPrompts: 38,
+      totalCsvExports: 21
     });
 
     this.users.set('usr_admin_2', {
       id: 'usr_admin_2',
       fullName: 'Adobe Icon Studio',
       email: 'adobeicon99@gmail.com',
-      passwordHash: 'admin123',
+      passwordHash: 'legacy:admin_seed_2',
       provider: 'local',
       role: 'admin',
       status: 'active',
@@ -139,7 +196,9 @@ class UserStoreImpl {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       lastLoginAt: new Date().toISOString(),
-      totalGenerations: 532
+      totalGenerations: 532,
+      totalPrompts: 147,
+      totalCsvExports: 89
     });
 
     this.auditLogs.push({
@@ -148,7 +207,7 @@ class UserStoreImpl {
       adminEmail: 'fahadhussain0282@gmail.com',
       action: 'SYSTEM_BOOT',
       targetUser: 'SYSTEM',
-      details: 'Enterprise Authentication Architecture initialized.'
+      details: 'Enterprise Authentication Architecture initialized. StockAI v1.1'
     });
   }
 }

@@ -29,6 +29,11 @@ export interface SharedMetadataContext {
   fileFormat: string; // e.g., 'PNG', 'EPS', 'JPG'
   isTransparent: boolean;
   isCollection: boolean;
+  seasonHoliday?: string;
+  moodEmotion?: string;
+  businessUseCase?: string;
+  lightingType?: string;
+  commercialIntentScore?: number;
 }
 
 export interface VisionAnalysisResult {
