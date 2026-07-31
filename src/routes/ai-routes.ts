@@ -140,16 +140,72 @@ router.post('/test-key', AuthMiddleware.authenticate, async (req: Request, res: 
         return res.status(503).json({ status: 'error', message: `Unable to reach Anthropic API. (${netErr.message})` });
       }
 
+    // ── Mistral ─────────────────────────────────────────────────────────
+    } else if (provider === 'mistral') {
+      const keyToUse = apiKey || process.env.MISTRAL_API_KEY;
+      if (!keyToUse) return res.status(400).json({ status: 'error', message: 'No Mistral API Key provided.' });
+      try {
+        const testRes = await fetch('https://api.mistral.ai/v1/models', {
+          headers: { Authorization: `Bearer ${keyToUse}` }
+        });
+        if (testRes.ok) return res.json({ status: 'ok', provider: 'mistral', message: `Mistral API Connected` });
+        return res.status(400).json({ status: 'error', message: `Mistral authentication failed. [HTTP ${testRes.status}]` });
+      } catch (netErr: any) {
+        return res.status(503).json({ status: 'error', message: `Unable to reach Mistral API. (${netErr.message})` });
+      }
+
+    // ── DeepSeek ────────────────────────────────────────────────────────
+    } else if (provider === 'deepseek') {
+      const keyToUse = apiKey || process.env.DEEPSEEK_API_KEY;
+      if (!keyToUse) return res.status(400).json({ status: 'error', message: 'No DeepSeek API Key provided.' });
+      try {
+        const testRes = await fetch('https://api.deepseek.com/models', {
+          headers: { Authorization: `Bearer ${keyToUse}` }
+        });
+        if (testRes.ok) return res.json({ status: 'ok', provider: 'deepseek', message: `DeepSeek API Connected` });
+        return res.status(400).json({ status: 'error', message: `DeepSeek authentication failed. [HTTP ${testRes.status}]` });
+      } catch (netErr: any) {
+        return res.status(503).json({ status: 'error', message: `Unable to reach DeepSeek API. (${netErr.message})` });
+      }
+
+    // ── Together AI ──────────────────────────────────────────────────────
+    } else if (provider === 'together') {
+      const keyToUse = apiKey || process.env.TOGETHER_API_KEY;
+      if (!keyToUse) return res.status(400).json({ status: 'error', message: 'No Together API Key provided.' });
+      try {
+        const testRes = await fetch('https://api.together.xyz/v1/models', {
+          headers: { Authorization: `Bearer ${keyToUse}` }
+        });
+        if (testRes.ok) return res.json({ status: 'ok', provider: 'together', message: `Together API Connected` });
+        return res.status(400).json({ status: 'error', message: `Together authentication failed. [HTTP ${testRes.status}]` });
+      } catch (netErr: any) {
+        return res.status(503).json({ status: 'error', message: `Unable to reach Together API. (${netErr.message})` });
+      }
+
+    // ── OpenRouter ──────────────────────────────────────────────────────
+    } else if (provider === 'openrouter') {
+      const keyToUse = apiKey || process.env.OPENROUTER_API_KEY;
+      if (!keyToUse) return res.status(400).json({ status: 'error', message: 'No OpenRouter API Key provided.' });
+      try {
+        const testRes = await fetch('https://openrouter.ai/api/v1/models', {
+          headers: { Authorization: `Bearer ${keyToUse}` }
+        });
+        if (testRes.ok) return res.json({ status: 'ok', provider: 'openrouter', message: `OpenRouter API Connected` });
+        return res.status(400).json({ status: 'error', message: `OpenRouter authentication failed. [HTTP ${testRes.status}]` });
+      } catch (netErr: any) {
+        return res.status(503).json({ status: 'error', message: `Unable to reach OpenRouter API. (${netErr.message})` });
+      }
+
     // ── Google Gemini (default) ─────────────────────────────────────────
     } else {
       const ai = getGeminiClient(apiKey);
       try {
         const testResponse = await ai.models.generateContent({
-          model: model || 'gemini-2.5-flash',
+          model: model || 'gemini-1.5-flash',
           contents: 'Reply with only: OK'
         });
         if (testResponse) {
-          return res.json({ status: 'ok', provider: 'google-gemini', message: `Google Gemini Connected — Model: ${model || 'gemini-2.5-flash'}` });
+          return res.json({ status: 'ok', provider: 'google-gemini', message: `Google Gemini Connected — Model: ${model || 'gemini-1.5-flash'}` });
         }
         return res.status(400).json({ status: 'error', message: 'Gemini connection test failed. Check your API key.' });
       } catch (geminiErr: any) {

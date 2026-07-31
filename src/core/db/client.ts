@@ -63,8 +63,8 @@ export async function initDb(): Promise<void> {
         rejectUnauthorized: false
       },
       max: process.env.NODE_ENV === 'production' ? 3 : 10, // Limit for serverless
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 10000,
+      idleTimeoutMillis: 60000,
+      connectionTimeoutMillis: 30000,
     });
 
     const adapter = new PrismaPg(pool);

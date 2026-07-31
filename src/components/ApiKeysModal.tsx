@@ -57,7 +57,7 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({
     setStatusMessage('Testing provider connection...');
     try {
       const activeModel = providerModels[selectedProvider] || activeProviderConfig.defaultModel;
-      const token = localStorage.getItem('stockai_token') || sessionStorage.getItem('stockai_token') || '';
+      const token = localStorage.getItem('stockai_auth_token') || sessionStorage.getItem('stockai_auth_token') || '';
       const res = await fetch('/api/test-key', {
         method: 'POST',
         headers: {
