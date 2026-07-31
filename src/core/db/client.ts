@@ -30,8 +30,9 @@ let _dbAvailable = false;
 export async function initDb(): Promise<void> {
   if (_db !== null) return;
 
-  // Prefer DIRECT_URL to bypass PgBouncer TLS self-signed cert and timeout issues on Vercel
-  const DATABASE_URL = process.env.DIRECT_URL || process.env.DATABASE_URL;
+  // Use DATABASE_URL (port 6543 IPv4 pooler) to avoid Vercel IPv6 outbound timeouts.
+  // The pg adapter with rejectUnauthorized: false handles the pooler's self-signed cert.
+  const DATABASE_URL = process.env.DATABASE_URL;
 
   if (!DATABASE_URL || DATABASE_URL.trim().length === 0) {
     console.warn(
