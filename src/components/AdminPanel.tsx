@@ -39,7 +39,8 @@ import {
   Shield,
   AlertCircle,
   Cpu,
-  ArrowRight
+  ArrowRight,
+  Download
 } from 'lucide-react';
 import { UserSubscription, AdminUserRecord, AuditLogEntry, AuthUser } from '../types';
 
@@ -47,11 +48,14 @@ import { UserSubscription, AdminUserRecord, AuditLogEntry, AuthUser } from '../t
 
 const PROVIDERS_LIST = [
   { id: 'google-gemini', name: 'Google Gemini', icon: '✦' },
-  { id: 'openai',        name: 'OpenAI',        icon: '◈' },
-  { id: 'anthropic',     name: 'Anthropic',     icon: '◇' },
-  { id: 'groq',          name: 'Groq LPU',      icon: '⚡' },
+  { id: 'openai',        name: 'OpenAI GPT',    icon: '⬡' },
+  { id: 'anthropic',     name: 'Claude',        icon: '◈' },
+  { id: 'groq',          name: 'Groq Cloud',    icon: '⚡' },
   { id: 'xai',           name: 'xAI (Grok)',    icon: '𝕏' },
-  { id: 'openrouter',    name: 'OpenRouter',    icon: '◎' },
+  { id: 'openrouter',    name: 'OpenRouter',    icon: '⊕' },
+  { id: 'mistral',       name: 'Mistral AI',    icon: '🌊' },
+  { id: 'deepseek',      name: 'DeepSeek AI',   icon: '🔍' },
+  { id: 'together',      name: 'Together AI',   icon: '🤝' },
 ];
 
 interface SafePoolKey {
@@ -823,7 +827,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   // User Filter & Search
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'expired' | 'pending_activation' | 'suspended'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'expired' | 'pending_activation' | 'suspended' | 'blocked'>('all');
 
   // Pagination
   const [userPage, setUserPage] = useState(1);
@@ -1174,6 +1178,57 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     } catch (e) { console.error('Force logout failed', e); }
   };
 
+  const handleBlockUser = async (userId: string, userEmail: string) => {
+    if (!window.confirm(`BLOCK account for ${userEmail}?\n\nThis will immediately terminate all sessions and prevent login.`)) return;
+    try {
+      const token = localStorage.getItem('stockai_auth_token') || '';
+      const res = await fetch('/api/admin/block-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ userId })
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        alert(`Error: ${d.error}`);
+      } else {
+        fetchAdminData();
+      }
+    } catch (e) { console.error('Block user failed', e); }
+  };
+
+  const handleUnblockUser = async (userId: string, userEmail: string) => {
+    if (!window.confirm(`UNBLOCK account for ${userEmail}?`)) return;
+    try {
+      const token = localStorage.getItem('stockai_auth_token') || '';
+      await fetch('/api/admin/unblock-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ userId })
+      });
+      fetchAdminData();
+    } catch (e) { console.error('Unblock user failed', e); }
+  };
+
+  const handleExportUsers = () => {
+    const token = localStorage.getItem('stockai_auth_token') || '';
+    const url = '/api/admin/export-users';
+    const a = document.createElement('a');
+    a.href = url;
+    // Add auth token via a short-lived link
+    fetch(url, { headers: { 'Authorization': `Bearer ${token}` } })
+      .then(r => r.blob())
+      .then(blob => {
+        const blobUrl = URL.createObjectURL(blob);
+        a.href = blobUrl;
+        a.download = `stockai-users-${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
+      })
+      .catch(() => alert('Export failed. Please try again.'));
+  };
+
   const handleOpenWhatsApp = (channel: 'sales' | 'support' | 'general') => {
     const numbers = {
       sales: '03413516882',
@@ -1190,7 +1245,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     const matchesSearch = u.email.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           u.fullName.toLowerCase().includes(searchQuery.toLowerCase());
     if (statusFilter === 'all') return matchesSearch;
-    return matchesSearch && u.planStatus === statusFilter;
+    return matchesSearch && (u.planStatus === statusFilter || (u as any).status === statusFilter);
   });
   const totalUserPages = Math.max(1, Math.ceil(filteredUsers.length / USER_PAGE_SIZE));
   const paginatedUsers = filteredUsers.slice((userPage - 1) * USER_PAGE_SIZE, userPage * USER_PAGE_SIZE);
@@ -1617,12 +1672,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         <h3 className="text-base font-bold text-white">Contributor User Accounts</h3>
                         <p className="text-xs text-zinc-400">Manage user status, plan activation, device locks, and access permissions.</p>
                       </div>
-                      <button
-                        onClick={() => setIsAddMemberOpen(true)}
-                        className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs rounded shadow transition-colors flex items-center gap-2 cursor-pointer self-start"
-                      >
-                        <UserPlus className="w-4 h-4" /> Add Member
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={handleExportUsers}
+                          className="px-3.5 py-2 bg-blue-900/60 hover:bg-blue-800/60 text-blue-300 border border-blue-800 font-semibold text-xs rounded shadow transition-colors flex items-center gap-2 cursor-pointer"
+                        >
+                          <Download className="w-3.5 h-3.5" /> Export CSV
+                        </button>
+                        <button
+                          onClick={() => setIsAddMemberOpen(true)}
+                          className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs rounded shadow transition-colors flex items-center gap-2 cursor-pointer"
+                        >
+                          <UserPlus className="w-4 h-4" /> Add Member
+                        </button>
+                      </div>
                     </div>
 
                     {/* Search & Filter Bar */}
@@ -1646,7 +1709,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           { value: 'active', label: 'Active' },
                           { value: 'expired', label: 'Expired' },
                           { value: 'pending_activation', label: 'Pending' },
-                          { value: 'suspended', label: 'Suspended' }
+                          { value: 'suspended', label: 'Suspended' },
+                          { value: 'blocked', label: 'Blocked' }
                         ] as const).map(f => (
                           <button
                             key={f.value}
@@ -1698,12 +1762,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                       ? 'bg-emerald-950 text-emerald-400 border-emerald-800' 
                                       : u.planStatus === 'suspended'
                                       ? 'bg-amber-950 text-amber-400 border-amber-800'
+                                      : u.planStatus === 'blocked' || (u as any).status === 'blocked'
+                                      ? 'bg-red-950 text-red-400 border-red-800'
                                       : u.planStatus === 'pending_activation'
                                       ? 'bg-blue-950 text-blue-400 border-blue-800'
                                       : 'bg-red-950 text-red-400 border-red-800'
                                   }`}>
                                     {u.planStatus === 'active' ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                                    {u.planStatus === 'pending_activation' ? 'PENDING' : u.planStatus.toUpperCase()}
+                                    {u.planStatus === 'pending_activation' ? 'PENDING' : 
+                                     u.planStatus === 'blocked' || (u as any).status === 'blocked' ? '🚫 BLOCKED' :
+                                     u.planStatus.toUpperCase()}
                                   </span>
                                 </td>
                                 <td className="p-3 font-mono text-[11px] text-zinc-400">
@@ -1786,12 +1854,30 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                                       )
                                     )}
                                     {!IMMUTABLE_ADMIN_EMAILS.includes(u.email.toLowerCase()) && (
-                                      <button
-                                        onClick={() => handleDeleteUser(u.id, u.email)}
-                                        className="px-2 py-1 bg-red-950 hover:bg-red-900 text-red-400 border border-red-800 rounded text-[10px] font-bold transition-colors"
-                                      >
-                                        Delete
-                                      </button>
+                                      <>
+                                        {/* Block/Unblock */}
+                                        {u.planStatus === 'blocked' || (u as any).status === 'blocked' ? (
+                                          <button
+                                            onClick={() => handleUnblockUser(u.id, u.email)}
+                                            className="px-2 py-1 bg-emerald-950 hover:bg-emerald-900 text-emerald-400 border border-emerald-800 rounded text-[10px] font-medium transition-colors"
+                                          >
+                                            Unblock
+                                          </button>
+                                        ) : (
+                                          <button
+                                            onClick={() => handleBlockUser(u.id, u.email)}
+                                            className="px-2 py-1 bg-red-950/60 hover:bg-red-900 text-red-400 border border-red-800 rounded text-[10px] font-medium transition-colors"
+                                          >
+                                            Block
+                                          </button>
+                                        )}
+                                        <button
+                                          onClick={() => handleDeleteUser(u.id, u.email)}
+                                          className="px-2 py-1 bg-red-950 hover:bg-red-900 text-red-400 border border-red-800 rounded text-[10px] font-bold transition-colors"
+                                        >
+                                          Delete
+                                        </button>
+                                      </>
                                     )}
                                   </div>
                                 </td>

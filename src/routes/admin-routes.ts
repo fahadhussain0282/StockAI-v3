@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { AuthMiddleware, userStore } from '../core/auth';
+import { isDbAvailable } from '../core/db/client';
 import { 
   planStore, 
   licenseStore, 
@@ -50,11 +51,15 @@ router.get('/users', async (req: Request, res: Response) => {
     planName: u.subscription.planName,
     planStatus: u.subscription.isActive
       ? 'active'
-      : (u.status === 'suspended' ? 'suspended' : (u.status === 'pending_activation' ? 'pending_activation' : 'expired')),
+      : (u.status === 'blocked' ? 'blocked'
+        : (u.status === 'suspended' ? 'suspended'
+          : (u.status === 'pending_activation' ? 'pending_activation'
+            : 'expired'))) as any,
     expiresAt: u.subscription.expiresAt,
     activatedAt: u.subscription.activatedAt,
     activeDeviceId: u.activeDeviceId,
     lastActive: u.lastLoginAt,
+    lastLoginAt: u.lastLoginAt,
     createdAt: u.createdAt,
     totalGenerations: u.totalGenerations || 0,
     totalPrompts: u.totalPrompts || 0,
@@ -237,6 +242,7 @@ router.post('/add-member', async (req: Request, res: Response) => {
   } else {
     const newId = `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const newDevId = `dev_${Date.now()}`;
+    const now2 = new Date().toISOString();
     const newUser: any = {
       id: newId,
       fullName: fullName || 'Contributor Member',
@@ -257,9 +263,12 @@ router.post('/add-member', async (req: Request, res: Response) => {
         deviceId: newDevId
       },
       activeDeviceId: newDevId,
-      createdAt: new Date().toISOString(),
-      lastLoginAt: new Date().toISOString(),
-      totalGenerations: 0
+      createdAt: now2,
+      updatedAt: now2,
+      lastLoginAt: now2,
+      totalGenerations: 0,
+      totalPrompts: 0,
+      totalCsvExports: 0
     };
 
     await userStore.createUser(newUser);
@@ -988,9 +997,10 @@ router.get('/system-health', async (req: Request, res: Response) => {
       memoryUsageMB: Math.round(process.memoryUsage().heapUsed / 1024 / 1024)
     },
     database: {
-      status: 'operational',
+      status: isDbAvailable() ? 'operational' : 'in-memory-fallback',
       userCount: allUsers.length,
-      type: 'in-memory'
+      type: isDbAvailable() ? 'postgresql' : 'in-memory',
+      supabase: isDbAvailable()
     },
     ai: aiStats,
     timestamp: new Date().toISOString()
@@ -1032,6 +1042,144 @@ router.post('/users/bulk-delete', async (req: Request, res: Response) => {
   });
 
   return res.json({ success: true, deleted, skipped });
+});
+
+// Admin: Block User
+router.post('/block-user', async (req: Request, res: Response) => {
+  const { userId } = req.body;
+  if (!userId) return res.status(400).json({ error: 'User ID is required.' });
+
+  const targetUser = await userStore.findUserById(userId);
+  if (!targetUser) return res.status(404).json({ error: 'User not found.' });
+
+  if (IMMUTABLE_ADMIN_EMAILS.includes(targetUser.email.toLowerCase())) {
+    return res.status(403).json({ error: 'Cannot block Super Admin accounts.' });
+  }
+
+  targetUser.status = 'blocked';
+  targetUser.subscription.isActive = false;
+  await userStore.updateUser(userId, targetUser);
+  // Terminate all sessions immediately
+  await userStore.deleteSessionsByUserId(userId);
+
+  await userStore.logAudit({
+    id: `audit_${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    adminEmail: req.auth!.user.email,
+    action: 'USER_BLOCKED',
+    targetUser: targetUser.email,
+    details: `Blocked account for ${targetUser.email}. All sessions terminated.`
+  });
+
+  return res.json({ success: true, status: 'blocked' });
+});
+
+// Admin: Unblock User
+router.post('/unblock-user', async (req: Request, res: Response) => {
+  const { userId } = req.body;
+  if (!userId) return res.status(400).json({ error: 'User ID is required.' });
+
+  const targetUser = await userStore.findUserById(userId);
+  if (!targetUser) return res.status(404).json({ error: 'User not found.' });
+
+  targetUser.status = 'active';
+  targetUser.subscription.isActive = (
+    new Date(targetUser.subscription.expiresAt).getTime() > Date.now()
+  );
+  targetUser.subscription.isExpired = !targetUser.subscription.isActive;
+  await userStore.updateUser(userId, targetUser);
+
+  await userStore.logAudit({
+    id: `audit_${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    adminEmail: req.auth!.user.email,
+    action: 'USER_UNBLOCKED',
+    targetUser: targetUser.email,
+    details: `Unblocked account for ${targetUser.email}.`
+  });
+
+  return res.json({ success: true, status: 'active' });
+});
+
+// Admin: Export Users as CSV
+router.get('/export-users', async (req: Request, res: Response) => {
+  try {
+    const users = await userStore.getAllUsers();
+    const headers = [
+      'ID', 'Full Name', 'Email', 'Role', 'Status',
+      'Plan', 'Plan Status', 'Activated At', 'Expires At',
+      'Total Generations', 'Total Prompts', 'Total CSV Exports',
+      'Created At', 'Last Login'
+    ];
+
+    const rows = users.map(u => [
+      u.id,
+      `"${(u.fullName || '').replace(/"/g, '""')}"`,
+      u.email,
+      u.role,
+      u.status,
+      `"${(u.subscription?.planName || 'Free').replace(/"/g, '""')}"`,
+      u.subscription?.isActive ? 'active' : 'expired',
+      u.subscription?.activatedAt ? new Date(u.subscription.activatedAt).toISOString().split('T')[0] : '',
+      u.subscription?.expiresAt ? new Date(u.subscription.expiresAt).toISOString().split('T')[0] : '',
+      u.totalGenerations || 0,
+      u.totalPrompts || 0,
+      u.totalCsvExports || 0,
+      u.createdAt ? new Date(u.createdAt).toISOString().split('T')[0] : '',
+      u.lastLoginAt ? new Date(u.lastLoginAt).toISOString().split('T')[0] : ''
+    ]);
+
+    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="stockai-users-${new Date().toISOString().split('T')[0]}.csv"`);
+    return res.send(csv);
+  } catch (e: any) {
+    return res.status(500).json({ error: 'Export failed.', detail: e?.message });
+  }
+});
+
+// Admin: Get User Activity & Generation History
+router.get('/users/:userId/activity', async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const user = await userStore.findUserById(userId);
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+
+    const auditLogs = await userStore.getAllAuditLogs();
+    const userAuditLogs = auditLogs.filter(log => 
+      log.targetUser === user.email || (log as any).targetUserId === userId
+    ).slice(0, 50);
+
+    const { getDb, isDbAvailable } = await import('../core/db/client');
+    let telemetry: any[] = [];
+    if (isDbAvailable()) {
+      telemetry = await getDb()!.telemetryLog.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        take: 50
+      });
+    }
+
+    return res.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+        status: user.status,
+        totalGenerations: user.totalGenerations || 0,
+        totalPrompts: user.totalPrompts || 0,
+        totalCsvExports: user.totalCsvExports || 0,
+        lastLoginAt: user.lastLoginAt,
+        createdAt: user.createdAt
+      },
+      auditLogs: userAuditLogs,
+      telemetry
+    });
+  } catch (e: any) {
+    return res.status(500).json({ error: 'Failed to load user activity.', detail: e?.message });
+  }
 });
 
 // ─── Enterprise API Key Pool Management ──────────────────────────────────
@@ -1226,6 +1374,22 @@ router.post('/key-pool/key/:keyId/test', async (req: Request, res: Response) => 
       const r = await fetch('https://openrouter.ai/api/v1/models', { headers: { Authorization: `Bearer ${rawKey}` } });
       testOk = r.ok;
       message = testOk ? `OpenRouter OK — HTTP ${r.status}` : `OpenRouter failed — HTTP ${r.status}`;
+    } else if (provId === 'mistral') {
+      const r = await fetch('https://api.mistral.ai/v1/models', { headers: { Authorization: `Bearer ${rawKey}` } });
+      testOk = r.ok;
+      const modelCount = testOk ? ((await r.json())?.data?.length || '?') : 0;
+      message = testOk ? `Mistral AI OK — ${modelCount} models available` : `Mistral failed — HTTP ${r.status}`;
+    } else if (provId === 'deepseek') {
+      const r = await fetch('https://api.deepseek.com/v1/models', { headers: { Authorization: `Bearer ${rawKey}` } });
+      testOk = r.ok;
+      const modelCount = testOk ? ((await r.json())?.data?.length || '?') : 0;
+      message = testOk ? `DeepSeek AI OK — ${modelCount} models available` : `DeepSeek failed — HTTP ${r.status}`;
+    } else if (provId === 'together') {
+      const r = await fetch('https://api.together.xyz/v1/models', { headers: { Authorization: `Bearer ${rawKey}` } });
+      testOk = r.ok;
+      const models = testOk ? (await r.json()) : [];
+      const modelCount = Array.isArray(models) ? models.length : 0;
+      message = testOk ? `Together AI OK — ${modelCount}+ models available` : `Together AI failed — HTTP ${r.status}`;
     } else {
       return res.status(400).json({ status: 'error', message: `Unknown provider: ${provId}` });
     }

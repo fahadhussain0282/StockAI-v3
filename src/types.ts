@@ -244,11 +244,12 @@ export interface AdminUserRecord {
   role: 'guest' | 'contributor' | 'admin';
   status: string;
   planName: string;
-  planStatus: 'active' | 'expired' | 'pending_activation' | 'suspended';
+  planStatus: 'active' | 'expired' | 'pending_activation' | 'suspended' | 'blocked';
   expiresAt: string;
   activatedAt: string;
   activeDeviceId: string;
   lastActive: string;
+  lastLoginAt?: string;
   createdAt: string;
   totalGenerations: number;
   totalPrompts: number;
@@ -256,7 +257,7 @@ export interface AdminUserRecord {
 }
 
 export type UserRole = 'guest' | 'contributor' | 'admin';
-export type AccountStatus = 'pending_activation' | 'active' | 'expired' | 'suspended' | 'disabled';
+export type AccountStatus = 'pending_activation' | 'active' | 'expired' | 'suspended' | 'blocked' | 'disabled';
 
 export interface AuthUser {
   id: string;

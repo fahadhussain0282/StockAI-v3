@@ -86,6 +86,14 @@ export class AuthService {
     const user = await userStore.findUserByEmail(cleanEmail);
     if (!user) throw new Error('Invalid email address or password.');
 
+    // ─── Status checks BEFORE verifying password (security & UX) ────────────
+    if (user.status === 'blocked') {
+      throw new Error('Your account has been blocked. Please contact support.');
+    }
+    if (user.status === 'suspended') {
+      throw new Error('Your account has been suspended. Please contact the administrator.');
+    }
+
     const isMatch = await PasswordService.verifyPassword(password, user.passwordHash);
     if (!isMatch) throw new Error('Invalid email address or password.');
 
@@ -151,6 +159,13 @@ export class AuthService {
 
       await userStore.createUser(user);
     } else {
+      // ─── Status checks for existing Google users ──────────────────────────
+      if (user.status === 'blocked') {
+        throw new Error('Your account has been blocked. Please contact support.');
+      }
+      if (user.status === 'suspended') {
+        throw new Error('Your account has been suspended. Please contact the administrator.');
+      }
       user.lastLoginAt = new Date().toISOString();
       user.updatedAt = new Date().toISOString();
       user.googleId = payload.sub;

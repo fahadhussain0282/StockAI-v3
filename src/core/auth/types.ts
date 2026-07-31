@@ -1,6 +1,6 @@
 export type Role = 'guest' | 'contributor' | 'admin' | 'team_owner' | 'team_member' | 'viewer' | 'moderator';
 
-export type UserStatus = 'pending_activation' | 'active' | 'expired' | 'suspended';
+export type UserStatus = 'pending_activation' | 'active' | 'expired' | 'suspended' | 'blocked';
 
 export interface UserSubscription {
   planId: string;

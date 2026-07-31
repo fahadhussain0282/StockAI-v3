@@ -5,6 +5,9 @@ import { XAiProvider } from './providers/xai';
 import { OpenAiProvider } from './providers/openai';
 import { AnthropicProvider } from './providers/anthropic';
 import { OpenRouterProvider } from './providers/openrouter';
+import { MistralProvider } from './providers/mistral';
+import { DeepSeekProvider } from './providers/deepseek';
+import { TogetherProvider } from './providers/together';
 
 class Registry {
   private providers: Map<string, BaseAiProvider> = new Map();
@@ -16,6 +19,9 @@ class Registry {
     this.register(new OpenAiProvider());
     this.register(new AnthropicProvider());
     this.register(new OpenRouterProvider());
+    this.register(new MistralProvider());
+    this.register(new DeepSeekProvider());
+    this.register(new TogetherProvider());
   }
 
   register(provider: BaseAiProvider) {

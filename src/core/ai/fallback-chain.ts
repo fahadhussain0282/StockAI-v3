@@ -1,7 +1,7 @@
 /**
  * StockAI Enterprise — Dynamic Provider Fallback Configuration
  *
- * Priority order: Google Gemini → OpenAI → Anthropic → Groq → xAI → OpenRouter
+ * Priority order: Google Gemini → OpenAI → Anthropic → Groq → xAI → OpenRouter → Mistral → DeepSeek → Together
  *
  * This order can be overridden dynamically by admin settings.
  * Never hardcode provider selection in application logic.
@@ -13,7 +13,10 @@ export const PROVIDER_FALLBACK_ORDER = [
   'anthropic',
   'groq',
   'xai',
-  'openrouter'
+  'openrouter',
+  'mistral',
+  'deepseek',
+  'together'
 ];
 
 /** All supported provider IDs for validation */

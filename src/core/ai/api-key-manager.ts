@@ -520,8 +520,14 @@ export class ApiKeyManager {
   }
 
   static getAllPoolStats(): KeyPoolStats[] {
-    const providers = ['google-gemini', 'openai', 'anthropic', 'groq', 'xai', 'openrouter'];
-    return providers.map(p => this.getPoolStats(p));
+    // Dynamically return stats for all known providers — includes any new ones added
+    const ALL_PROVIDERS = [
+      'google-gemini', 'openai', 'anthropic', 'groq', 'xai',
+      'openrouter', 'mistral', 'deepseek', 'together'
+    ];
+    // Also include any providers that have keys but are not in the canonical list
+    const extraProviders = Array.from(keyStore.keys()).filter(p => !ALL_PROVIDERS.includes(p));
+    return [...ALL_PROVIDERS, ...extraProviders].map(p => this.getPoolStats(p));
   }
 
   // ── Seed from environment variables ──────────────────────────────────────
@@ -534,11 +540,14 @@ export class ApiKeyManager {
   static seedFromEnvironment(): void {
     const envMap: Record<string, string[]> = {
       'google-gemini': ['GEMINI_API_KEY'],
-      'openai': ['OPENAI_API_KEY'],
-      'anthropic': ['ANTHROPIC_API_KEY'],
-      'groq': ['GROQ_API_KEY'],
-      'xai': ['XAI_API_KEY'],
-      'openrouter': ['OPENROUTER_API_KEY']
+      'openai':        ['OPENAI_API_KEY'],
+      'anthropic':     ['ANTHROPIC_API_KEY'],
+      'groq':          ['GROQ_API_KEY'],
+      'xai':           ['XAI_API_KEY', 'GROK_API_KEY'],
+      'openrouter':    ['OPENROUTER_API_KEY'],
+      'mistral':       ['MISTRAL_API_KEY'],
+      'deepseek':      ['DEEPSEEK_API_KEY'],
+      'together':      ['TOGETHER_API_KEY']
     };
 
     let seededTotal = 0;
@@ -637,7 +646,10 @@ export class ApiKeyManager {
 
   /** Get startup summary for logging */
   static getStartupSummary(): string {
-    const providers = ['google-gemini', 'openai', 'anthropic', 'groq', 'xai', 'openrouter'];
+    const providers = [
+      'google-gemini', 'openai', 'anthropic', 'groq', 'xai',
+      'openrouter', 'mistral', 'deepseek', 'together'
+    ];
     const lines = providers.map(p => {
       const pool = keyStore.get(p) || [];
       return `  ${p}: ${pool.length} key(s)`;
