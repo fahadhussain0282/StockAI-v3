@@ -6,7 +6,8 @@ import { RetryService } from './retry-service';
 import { PROVIDER_FALLBACK_ORDER, buildProviderChain } from './fallback-chain';
 import { BaseAiProvider } from './providers/base-provider';
 import { CircuitBreakerService } from './circuit-breaker';
-import { ApiKeyManager } from './api-key-manager';
+import { ApiKeyManager, decryptKey } from './api-key-manager';
+import { getDb, isDbAvailable } from '../db/client';
 
 /**
  * StockAI Enterprise AI Gateway
@@ -40,7 +41,26 @@ export class Gateway {
     const primaryProvider = (options.provider && options.provider.trim().length > 0)
       ? options.provider
       : PROVIDER_FALLBACK_ORDER[0];
-    const rawChain = buildProviderChain(primaryProvider);
+    // Load User Provider Settings if userId is present
+    let rawChain = buildProviderChain(primaryProvider);
+    if (options.userId && isDbAvailable()) {
+      try {
+        const db = getDb();
+        if (db) {
+          const settings = await db.userProviderSettings.findUnique({ where: { userId: options.userId } });
+          if (settings && settings.fallbackOrder) {
+            const userChain = JSON.parse(settings.fallbackOrder);
+            if (Array.isArray(userChain) && userChain.length > 0) {
+              // Reorder the fallback chain based on user preferences
+              // Ensure primaryProvider is first if it's in the user's chain
+              rawChain = [...new Set([primaryProvider, ...userChain, ...rawChain])];
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[AI Gateway] Failed to load user provider settings', err);
+      }
+    }
 
     // Sort fallbacks by health score (primary stays first; fallbacks re-ordered by health)
     const [first, ...rest] = rawChain;
@@ -99,20 +119,42 @@ export class Gateway {
 
       // ── Build API Key Iterator for this provider ───────────────────────────
       // CRITICAL: Check pool keys FIRST, then fall back to ENV.
-      let keyIterator: Array<{ id: string; key: string; label: string }>;
+      let keyIterator: Array<{ id: string; key: string; label: string; type: 'user' | 'admin' | 'custom' | 'env' }>;
 
       if (options.customApiKey && options.customApiKey.trim().length > 0) {
         // Single custom key — explicit user-provided key, treated as pool of 1
-        keyIterator = [{ id: 'custom', key: options.customApiKey.trim(), label: 'custom-key' }];
-      } else {
-        // Check enterprise key pool first
+        keyIterator = [{ id: 'custom', key: options.customApiKey.trim(), label: 'custom-key', type: 'custom' }];
+      } else if (options.userId && isDbAvailable()) {
+        try {
+          const db = getDb();
+          const userKeys = await db!.userApiKey.findMany({
+            where: { userId: options.userId, provider: providerId, isEnabled: true }
+          });
+          
+          if (userKeys.length > 0) {
+            // Apply simple random load balancing for now
+            keyIterator = userKeys
+              .sort(() => Math.random() - 0.5)
+              .map(k => ({ id: k.id, key: decryptKey(k.encryptedKey), label: k.label, type: 'user' }));
+          } else {
+            console.warn(`[AI Gateway] Skipping ${providerId} — no User API keys found for this provider`);
+            continue;
+          }
+        } catch (err) {
+          console.warn('[AI Gateway] Failed to fetch user keys, falling back to admin pool', err);
+          keyIterator = [];
+        }
+      } 
+      
+      if (!keyIterator || keyIterator.length === 0) {
+        // Fallback to enterprise key pool (Admin keys)
         const poolKeys = ApiKeyManager.getKeyIterator(providerId);
         if (poolKeys.length > 0) {
           // Use pool keys — all simultaneously active, ordered by health score
-          keyIterator = poolKeys.map(k => ({ id: k.id, key: k.key, label: k.label }));
+          keyIterator = poolKeys.map(k => ({ id: k.id, key: k.key, label: k.label, type: 'admin' }));
         } else if (providerImpl.isEnabled()) {
           // No pool keys, but ENV key exists — use it as implicit pool of 1
-          keyIterator = [{ id: 'env', key: '', label: 'env-key' }];
+          keyIterator = [{ id: 'env', key: '', label: 'env-key', type: 'env' }];
         } else {
           // No pool keys and no ENV key — skip this provider
           console.warn(`[AI Gateway] Skipping ${providerId} — no API keys in pool and no ENV key`);
@@ -123,7 +165,7 @@ export class Gateway {
       console.log(`[AI Gateway] Provider "${providerId}" — ${keyIterator.length} key(s) to try, model: ${targetModel}, vision: ${isVision}`);
 
       // ── Per-Key Failover Loop ──────────────────────────────────────────────
-      for (const { id: keyId, key: keyValue, label: keyLabel } of keyIterator) {
+      for (const { id: keyId, key: keyValue, label: keyLabel, type: keyType } of keyIterator) {
         // Per-key timeout: 28 seconds to stay under server's 30s limit
         const keyStart = Date.now();
 
@@ -147,7 +189,21 @@ export class Gateway {
 
           // ── KEY SUCCESS ────────────────────────────────────────────────────
           const keyLatency = Date.now() - keyStart;
-          if (keyId !== 'custom' && keyId !== 'env') {
+          if (keyType === 'user') {
+            try {
+              getDb()!.userApiKey.update({
+                where: { id: keyId },
+                data: {
+                  lastSuccessAt: new Date(),
+                  lastUsedAt: new Date(),
+                  successCount: { increment: 1 },
+                  totalRequests: { increment: 1 },
+                  consecutiveFails: 0,
+                  isHealthy: true
+                }
+              }).catch(() => {});
+            } catch {}
+          } else if (keyType === 'admin') {
             ApiKeyManager.recordKeySuccess(keyId, keyLatency);
           }
           CircuitBreakerService.recordSuccess(providerId);
@@ -184,7 +240,12 @@ export class Gateway {
 
           // ── Classify the error for this key ───────────────────────────────
           if (errMsg.includes('TIMEOUT') || RetryService.isTimeout(errMsg)) {
-            if (keyId !== 'custom' && keyId !== 'env') {
+            if (keyType === 'user') {
+              getDb()!.userApiKey.update({
+                where: { id: keyId },
+                data: { lastFailureAt: new Date(), failureCount: { increment: 1 }, consecutiveFails: { increment: 1 }, timeoutCount: { increment: 1 }, lastErrorMessage: 'Timeout' }
+              }).catch(() => {});
+            } else if (keyType === 'admin') {
               ApiKeyManager.recordKeyFailure(keyId, 'timeout', errMsg);
             }
             AiHealth.recordFailure(providerId, targetModel, 'error');
@@ -193,7 +254,12 @@ export class Gateway {
 
           } else if (errMsg.includes('AUTH_ERROR') || RetryService.isAuthError(errMsg)) {
             // Auth failure → key is dead, mark unhealthy, skip to next key immediately
-            if (keyId !== 'custom' && keyId !== 'env') {
+            if (keyType === 'user') {
+              getDb()!.userApiKey.update({
+                where: { id: keyId },
+                data: { isHealthy: false, lastFailureAt: new Date(), failureCount: { increment: 1 }, lastErrorMessage: 'Auth Failed (Invalid Key)' }
+              }).catch(() => {});
+            } else if (keyType === 'admin') {
               ApiKeyManager.recordKeyFailure(keyId, 'auth_error', errMsg);
             }
             AiHealth.recordFailure(providerId, targetModel, 'auth_failure');
@@ -202,7 +268,12 @@ export class Gateway {
 
           } else if (errMsg.includes('QUOTA_EXHAUSTED') || RetryService.isQuotaExhausted(errMsg)) {
             // Quota exhausted → key is dead until billing reset
-            if (keyId !== 'custom' && keyId !== 'env') {
+            if (keyType === 'user') {
+              getDb()!.userApiKey.update({
+                where: { id: keyId },
+                data: { lastFailureAt: new Date(), failureCount: { increment: 1 }, consecutiveFails: { increment: 1 }, lastErrorMessage: 'Quota Exceeded' }
+              }).catch(() => {});
+            } else if (keyType === 'admin') {
               ApiKeyManager.recordKeyFailure(keyId, 'quota_exhausted', errMsg);
             }
             AiHealth.recordFailure(providerId, targetModel, 'quota_exhausted');
@@ -211,7 +282,12 @@ export class Gateway {
 
           } else if (errMsg.includes('RATE_LIMIT') || RetryService.isRateLimit(errMsg)) {
             // Rate limit → key needs cooldown, skip to next key NOW (no wait)
-            if (keyId !== 'custom' && keyId !== 'env') {
+            if (keyType === 'user') {
+              getDb()!.userApiKey.update({
+                where: { id: keyId },
+                data: { lastFailureAt: new Date(), failureCount: { increment: 1 }, rateLimitStatus: 'limited', lastErrorMessage: 'Rate Limited' }
+              }).catch(() => {});
+            } else if (keyType === 'admin') {
               ApiKeyManager.recordKeyFailure(keyId, 'rate_limit', errMsg, 60000);
             }
             AiHealth.recordFailure(providerId, targetModel, 'rate_limited');
@@ -220,20 +296,30 @@ export class Gateway {
 
           } else if (RetryService.isConnectionError(errMsg)) {
             // Network / connection error — mark transient, try next key
-            if (keyId !== 'custom' && keyId !== 'env') {
+            if (keyType === 'user') {
+              getDb()!.userApiKey.update({
+                where: { id: keyId },
+                data: { lastFailureAt: new Date(), failureCount: { increment: 1 }, consecutiveFails: { increment: 1 }, lastErrorMessage: 'Server Error' }
+              }).catch(() => {});
+            } else if (keyType === 'admin') {
               ApiKeyManager.recordKeyFailure(keyId, 'connection', errMsg);
             }
             AiHealth.recordFailure(providerId, targetModel, 'error');
             console.warn(`[AI Gateway] CONNECTION_ERROR on key "${keyLabel}" — rotating to next key.`);
-            continue;
+            continue; // Next key
 
           } else {
             // Transient error — record failure, try next key
-            if (keyId !== 'custom' && keyId !== 'env') {
+            if (keyType === 'user') {
+              getDb()!.userApiKey.update({
+                where: { id: keyId },
+                data: { lastFailureAt: new Date(), failureCount: { increment: 1 }, consecutiveFails: { increment: 1 }, lastErrorMessage: 'Server Error' }
+              }).catch(() => {});
+            } else if (keyType === 'admin') {
               ApiKeyManager.recordKeyFailure(keyId, 'transient', errMsg);
             }
             AiHealth.recordFailure(providerId, targetModel, 'error');
-            console.warn(`[AI Gateway] Transient error on key "${keyLabel}" — rotating to next key.`);
+            console.warn(`[AI Gateway] TRANSIENT_ERROR on key "${keyLabel}" — rotating to next key.`);
             continue; // Next key — instant failover
           }
         }

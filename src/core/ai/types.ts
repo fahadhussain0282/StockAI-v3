@@ -78,6 +78,7 @@ export interface GenerateVisionOptions {
   mimeType?: string;
   responseSchema?: any;
   customApiKey?: string;
+  userId?: string;
   developerMode?: boolean;
   fallbackChain?: string[];
   maxRetries?: number;

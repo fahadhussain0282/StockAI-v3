@@ -155,6 +155,7 @@ Return output strictly in valid JSON format matching:
         base64Image: resolvedBase64 || undefined,
         mimeType: mimeTypeForRequest,
         customApiKey,
+        userId: options.userId,
         developerMode: settings?.developerMode,
         responseSchema: {
           type: 'OBJECT',
@@ -367,6 +368,7 @@ Target: High-quality commercial microstock asset`;
         base64Image: undefined,
         mimeType: undefined,
         customApiKey,
+        userId: options.userId,
         developerMode: false,
         responseSchema: {
           type: 'OBJECT',

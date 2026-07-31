@@ -9,6 +9,7 @@ import { teamRouter } from './src/core/teams';
 import { billingRouter } from './src/core/billing';
 import { adminRouter, systemSettingsStore } from './src/routes/admin-routes';
 import { aiRouter } from './src/routes/ai-routes';
+import apiKeysRouter from './src/routes/api-keys-routes';
 import { ApiKeyManager } from './src/core/ai/api-key-manager';
 import { initDb, isDbAvailable } from './src/core/db/client';
 import { userStore } from './src/core/auth/user-store';
@@ -45,6 +46,40 @@ initDb().then(async () => {
   // Still seed API keys even if DB fails
   ApiKeyManager.seedFromEnvironment();
 });
+
+// ─── Background Auto Health Monitor ──────────────────────────────────────────
+setInterval(async () => {
+  try {
+    if (!isDbAvailable()) return;
+    const { getDb } = await import('./src/core/db/client');
+    const db = await getDb();
+    if (db) {
+      // Auto-recover user API keys that failed (e.g. rate limit cooldown)
+      const res = await db.userApiKey.updateMany({
+        where: {
+          OR: [
+            { isHealthy: false },
+            { rateLimitStatus: 'limited' },
+            { consecutiveFails: { gt: 0 } }
+          ],
+          // Only recover if last failure was more than 1 minute ago
+          lastFailureAt: { lt: new Date(Date.now() - 60000) }
+        },
+        data: {
+          isHealthy: true,
+          rateLimitStatus: 'ok',
+          consecutiveFails: 0,
+          lastErrorMessage: 'Auto-recovered by Health Monitor'
+        }
+      });
+      if (res.count > 0) {
+        console.log(`[HealthMonitor] Auto-recovered ${res.count} User API Key(s).`);
+      }
+    }
+  } catch (err: any) {
+    console.error('[HealthMonitor] Auto-recovery failed:', err?.message);
+  }
+}, 60000); // Runs every 60 seconds
 
 // ─── Seed Admin Users to Database ────────────────────────────────────────────
 async function seedAdminUsers() {
@@ -213,6 +248,7 @@ app.get('/api/health', (req: Request, res: Response) => {
 
 // ─── Register Module Routes ───────────────────────────────────────────────────
 app.use('/api/auth', authRouter);
+app.use('/api/user/keys', apiKeysRouter);
 app.use('/api/user', userRouter);
 app.use('/api', aiRouter);
 app.use('/api', teamRouter);

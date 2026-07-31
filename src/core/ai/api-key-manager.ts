@@ -22,7 +22,7 @@ const ENCRYPTION_ALGO = 'aes-256-gcm';
 const ENCRYPTION_SECRET = process.env.STOCKAI_KEY_ENCRYPTION_SECRET;
 const ENCRYPTION_ENABLED = !!(ENCRYPTION_SECRET && ENCRYPTION_SECRET.trim().length >= 32);
 
-function encryptKey(plaintext: string): string {
+export function encryptKey(plaintext: string): string {
   if (!ENCRYPTION_ENABLED || !ENCRYPTION_SECRET) return plaintext;
   try {
     const keyBuf = crypto.scryptSync(ENCRYPTION_SECRET.trim(), 'stockai-salt', 32);
@@ -36,7 +36,7 @@ function encryptKey(plaintext: string): string {
   }
 }
 
-function decryptKey(stored: string): string {
+export function decryptKey(stored: string): string {
   if (!ENCRYPTION_ENABLED || !ENCRYPTION_SECRET || !stored.startsWith('enc:')) return stored;
   try {
     const parts = stored.split(':');

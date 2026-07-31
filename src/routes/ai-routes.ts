@@ -267,7 +267,7 @@ router.post('/generate-metadata', async (req: Request, res: Response) => {
     let metadataResult: any;
     try {
       metadataResult = await Promise.race([
-        SeoEngine.generateMetadata({ ...req.body, marketplaceRule }),
+        SeoEngine.generateMetadata({ ...req.body, userId: authResult.userId, marketplaceRule }),
         new Promise<never>((_, reject) =>
           setTimeout(
             () => reject(new Error('GENERATION_TIMEOUT: Metadata generation exceeded 25s. All providers attempted. Please try again.')),
@@ -360,7 +360,7 @@ router.post('/generate-prompt', async (req: Request, res: Response) => {
     let promptResult: any;
     try {
       promptResult = await Promise.race([
-        SeoEngine.generatePrompt(req.body),
+        SeoEngine.generatePrompt({ ...req.body, userId: authResult.userId }),
         new Promise<never>((_, reject) =>
           setTimeout(
             () => reject(new Error('PROMPT_TIMEOUT: Prompt generation exceeded 20s.')),

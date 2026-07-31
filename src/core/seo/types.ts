@@ -61,6 +61,7 @@ export interface GenerateMetadataOptions {
   selectedModel?: string;
   marketplaceRule: MarketplaceRule;
   benchmarkMode?: boolean; // New benchmark mode
+  userId?: string;
 }
 
 export interface GeneratePromptOptions {
@@ -68,6 +69,7 @@ export interface GeneratePromptOptions {
   style?: string;
   mood?: string;
   customApiKey?: string;
+  userId?: string;
 }
 
 export interface KeywordQualityScore {

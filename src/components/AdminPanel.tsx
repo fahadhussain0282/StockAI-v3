@@ -597,6 +597,101 @@ const ApiKeyPoolPanel: React.FC<{ authToken: string }> = ({ authToken }) => {
   );
 };
 
+const UserApiKeysPanel: React.FC<{ authToken: string }> = ({ authToken }) => {
+  const [keys, setKeys] = React.useState<any[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [searchTerm, setSearchTerm] = React.useState('');
+  
+  React.useEffect(() => {
+    setLoading(true);
+    fetch('/api/admin/user-keys', { headers: { 'Authorization': `Bearer ${authToken}` } })
+      .then(r => r.json())
+      .then(d => { setKeys(d.keys || []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [authToken]);
+
+  const filtered = keys.filter(k => 
+    k.userEmail.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    k.userFullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    k.provider.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-base font-bold text-white flex items-center gap-2">
+            <Users className="w-4 h-4 text-emerald-400" /> User API Keys
+          </h3>
+          <p className="text-xs text-zinc-400 mt-0.5">Global view of all User API Keys in the system. Keys are fully masked for security.</p>
+        </div>
+        <div className="relative w-64">
+          <Search className="w-4 h-4 absolute left-3 top-2.5 text-zinc-500" />
+          <input
+            type="text"
+            placeholder="Search by user or provider..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            className="w-full bg-zinc-900 border border-zinc-800 rounded pl-9 pr-3 py-2 text-xs text-white focus:border-zinc-600 focus:outline-none"
+          />
+        </div>
+      </div>
+      
+      <div className="bg-[#0c0c0e] border border-zinc-800 rounded-lg overflow-x-auto">
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="bg-zinc-900/80 border-b border-zinc-800 text-[11px] uppercase tracking-wider text-zinc-500 font-semibold">
+              <th className="p-3 pl-4">User</th>
+              <th className="p-3">Provider</th>
+              <th className="p-3">API Key (Masked)</th>
+              <th className="p-3">Status</th>
+              <th className="p-3 text-right pr-4">Usage</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-800 text-sm">
+            {loading ? (
+              <tr><td colSpan={5} className="p-4 text-center text-xs text-zinc-500">Loading user keys...</td></tr>
+            ) : filtered.length === 0 ? (
+              <tr><td colSpan={5} className="p-4 text-center text-xs text-zinc-500">No user API keys found.</td></tr>
+            ) : (
+              filtered.map(k => (
+                <tr key={k.id} className="hover:bg-zinc-900/30 transition-colors">
+                  <td className="p-3 pl-4">
+                    <div className="font-medium text-white text-xs">{k.userFullName}</div>
+                    <div className="text-[10px] text-zinc-500">{k.userEmail}</div>
+                  </td>
+                  <td className="p-3">
+                    <div className="flex items-center gap-1.5 text-xs text-zinc-300">
+                      {PROVIDERS_LIST.find(p => p.id === k.provider)?.icon}
+                      {PROVIDERS_LIST.find(p => p.id === k.provider)?.name || k.provider}
+                    </div>
+                  </td>
+                  <td className="p-3">
+                    <div className="font-mono text-xs text-zinc-400 flex items-center gap-1.5">
+                      {k.maskedKey}
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-500/50" />
+                    </div>
+                    <div className="text-[10px] text-zinc-500">{k.label}</div>
+                  </td>
+                  <td className="p-3">
+                    {!k.isEnabled ? <span className="text-[10px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded">Disabled</span>
+                    : k.isHealthy ? <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded">Healthy</span>
+                    : <span className="text-[10px] bg-red-500/10 text-red-400 px-1.5 py-0.5 rounded">Failing</span>}
+                  </td>
+                  <td className="p-3 text-right pr-4">
+                    <div className="text-xs text-emerald-400">{k.successCount} Success</div>
+                    <div className="text-[10px] text-red-400/80">{k.failureCount} Failures</div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
 // ─── Model Management Panel ────────────────────────────────────────────────────
 
 const ModelManagementPanel: React.FC<{ authToken: string }> = ({ authToken }) => {
@@ -776,7 +871,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onUpdateSubscription,
   onExitAdmin
 }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'add-member' | 'subscriptions' | 'devices' | 'analytics' | 'audit' | 'settings' | 'support' | 'api-management' | 'plans' | 'system-health' | 'licenses' | 'plan-history'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'add-member' | 'subscriptions' | 'devices' | 'analytics' | 'audit' | 'settings' | 'support' | 'api-management' | 'plans' | 'system-health' | 'licenses' | 'plan-history' | 'user-keys'>('overview');
   const [apiSubTab, setApiSubTab] = useState<'key-pool' | 'models'>('key-pool');
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [users, setUsers] = useState<AdminUserRecord[]>([]);
@@ -888,6 +983,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   // Check authorization
   const isAuthorizedAdmin = currentUser && IMMUTABLE_ADMIN_EMAILS.includes(currentUser.email.toLowerCase().trim());
+  const adminToken = localStorage.getItem('stockai_auth_token') || '';
 
   useEffect(() => {
     if (isAuthorizedAdmin) {
@@ -898,7 +994,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const fetchAdminData = async () => {
     setIsLoading(true);
     try {
-      const token = localStorage.getItem('stockai_auth_token') || '';
+      const token = adminToken;
       const headers = {
         'Authorization': `Bearer ${token}`,
         'X-Device-Id': currentUser?.activeDeviceId || ''
@@ -958,7 +1054,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const handleActivatePlan = async (userId: string, targetEmail: string, planName: '1 Month Plan' | '6 Months Plan', days: number) => {
     try {
-      const token = localStorage.getItem('stockai_auth_token') || '';
+      const token = adminToken;
       const price = planName === '1 Month Plan' ? 300 : 2000;
       const res = await fetch('/api/admin/activate-plan', {
         method: 'POST',
@@ -998,7 +1094,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const handleExpirePlan = async (userId: string, targetEmail: string) => {
     try {
-      const token = localStorage.getItem('stockai_auth_token') || '';
+      const token = adminToken;
       const res = await fetch('/api/admin/expire-plan', {
         method: 'POST',
         headers: {
@@ -1024,7 +1120,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const handleToggleSuspend = async (userId: string, currentStatus: string) => {
     try {
-      const token = localStorage.getItem('stockai_auth_token') || '';
+      const token = adminToken;
       const suspend = currentStatus !== 'suspended';
       await fetch('/api/admin/toggle-suspend', {
         method: 'POST',
@@ -1040,7 +1136,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const handleRevokeDevice = async (userId: string) => {
     try {
-      const token = localStorage.getItem('stockai_auth_token') || '';
+      const token = adminToken;
       await fetch('/api/admin/revoke-device', {
         method: 'POST',
         headers: {
@@ -1058,7 +1154,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     if (!newMemberForm.email) return;
 
     try {
-      const token = localStorage.getItem('stockai_auth_token') || '';
+      const token = adminToken;
       const res = await fetch('/api/admin/add-member', {
         method: 'POST',
         headers: {
@@ -1097,7 +1193,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     if (!editingUser) return;
 
     try {
-      const token = localStorage.getItem('stockai_auth_token') || '';
+      const token = adminToken;
       const res = await fetch('/api/admin/edit-user', {
         method: 'POST',
         headers: {
@@ -1128,7 +1224,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleDeleteUser = async (userId: string, userEmail: string) => {
     if (!window.confirm(`PERMANENTLY DELETE this account?\n\n${userEmail}\n\nThis action CANNOT be undone. All sessions will be terminated.`)) return;
     try {
-      const token = localStorage.getItem('stockai_auth_token') || '';
+      const token = adminToken;
       await fetch(`/api/admin/users/${userId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
@@ -1140,7 +1236,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleChangeRole = async (userId: string, userEmail: string, newRole: 'admin' | 'contributor') => {
     if (!window.confirm(`Change role for ${userEmail} to ${newRole}?`)) return;
     try {
-      const token = localStorage.getItem('stockai_auth_token') || '';
+      const token = adminToken;
       await fetch('/api/admin/change-role', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -1154,7 +1250,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     const newPassword = window.prompt(`Set new password for ${userEmail}:\n(minimum 6 characters)`);
     if (!newPassword || newPassword.length < 6) return;
     try {
-      const token = localStorage.getItem('stockai_auth_token') || '';
+      const token = adminToken;
       const res = await fetch('/api/admin/reset-user-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -1168,7 +1264,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleForceLogout = async (userId: string, userEmail: string) => {
     if (!window.confirm(`Force logout all sessions for ${userEmail}?`)) return;
     try {
-      const token = localStorage.getItem('stockai_auth_token') || '';
+      const token = adminToken;
       await fetch('/api/admin/force-logout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -1181,7 +1277,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleBlockUser = async (userId: string, userEmail: string) => {
     if (!window.confirm(`BLOCK account for ${userEmail}?\n\nThis will immediately terminate all sessions and prevent login.`)) return;
     try {
-      const token = localStorage.getItem('stockai_auth_token') || '';
+      const token = adminToken;
       const res = await fetch('/api/admin/block-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -1199,7 +1295,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleUnblockUser = async (userId: string, userEmail: string) => {
     if (!window.confirm(`UNBLOCK account for ${userEmail}?`)) return;
     try {
-      const token = localStorage.getItem('stockai_auth_token') || '';
+      const token = adminToken;
       await fetch('/api/admin/unblock-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -1210,7 +1306,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   const handleExportUsers = () => {
-    const token = localStorage.getItem('stockai_auth_token') || '';
+    const token = adminToken;
     const url = '/api/admin/export-users';
     const a = document.createElement('a');
     a.href = url;
@@ -1253,7 +1349,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const fetchSystemHealth = async () => {
     setHealthLoading(true);
     try {
-      const token = localStorage.getItem('stockai_auth_token') || '';
+      const token = adminToken;
       const res = await fetch('/api/admin/system-health', {
         headers: { 'Authorization': `Bearer ${token}`, 'X-Device-Id': currentUser?.activeDeviceId || '' }
       });
@@ -1267,7 +1363,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const handleSaveSettings = async () => {
     try {
-      const token = localStorage.getItem('stockai_auth_token') || '';
+      const token = adminToken;
       const res = await fetch('/api/admin/system-settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -1288,7 +1384,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleCreatePlan = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const token = localStorage.getItem('stockai_auth_token') || '';
+      const token = adminToken;
       const res = await fetch('/api/admin/plans', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -1498,7 +1594,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               }`}
             >
               <Zap className="w-4 h-4 text-amber-400" />
-              API Management
+              Global Key Pool
+            </button>
+
+            <button
+              onClick={() => setActiveTab('user-keys')}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded text-xs font-medium transition-colors ${
+                activeTab === 'user-keys' ? 'bg-zinc-800 text-white font-semibold shadow-sm' : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
+              }`}
+            >
+              <Users className="w-4 h-4 text-emerald-400" />
+              User API Keys
             </button>
 
             <button
@@ -1560,6 +1666,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
             ) : (
               <>
+                {/* User API Keys Panel */}
+                {activeTab === 'user-keys' && (
+                  <UserApiKeysPanel authToken={adminToken} />
+                )}
                 {/* Overview Dashboard (Section 4) */}
                 {activeTab === 'overview' && (
                   <div className="space-y-6">

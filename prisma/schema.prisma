@@ -37,6 +37,8 @@ model User {
   auditActionsBy   AuditLog[]    @relation("AdminActions")
   auditActionsOn   AuditLog[]    @relation("TargetUser")
   telemetryLogs    TelemetryLog[]
+  apiKeys          UserApiKey[]
+  providerSettings UserProviderSettings?
 
   @@index([email])
   @@index([role])
@@ -181,4 +183,49 @@ model TelemetryLog {
   @@index([userId])
   @@index([provider])
   @@index([success])
+}
+
+// ─── User API Key Pool ────────────────────────────────────────────────────────
+
+model UserApiKey {
+  id                String   @id @default(cuid())
+  userId            String
+  provider          String
+  label             String   @default("My API Key")
+  encryptedKey      String   // AES-256-GCM encrypted
+  maskedKey         String   // E.g. "sk-ant-...****"
+  isEnabled         Boolean  @default(true)
+  isHealthy         Boolean  @default(true)
+  addedAt           DateTime @default(now())
+  lastUsedAt        DateTime?
+  lastSuccessAt     DateTime?
+  lastFailureAt     DateTime?
+  successCount      Int      @default(0)
+  failureCount      Int      @default(0)
+  totalRequests     Int      @default(0)
+  avgLatencyMs      Float    @default(0)
+  consecutiveFails  Int      @default(0)
+  cooldownUntil     BigInt   @default(0)
+  rateLimitUntil    BigInt   @default(0)
+  quotaStatus       String   @default("ok")
+  rateLimitStatus   String   @default("ok")
+  timeoutCount      Int      @default(0)
+  rateLimitCount    Int      @default(0)
+  lastErrorMessage  String?
+
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, provider])
+  @@index([isEnabled, isHealthy])
+}
+
+// ─── User Provider Settings ───────────────────────────────────────────────────
+
+model UserProviderSettings {
+  id                    String   @id @default(cuid())
+  userId                String   @unique
+  fallbackOrder         String   // JSON array of provider IDs e.g. ["google-gemini", "openai"]
+  loadBalancingStrategy String   @default("round-robin") // round-robin, least-used, priority, random
+
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

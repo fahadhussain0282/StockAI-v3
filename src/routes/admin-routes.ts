@@ -69,6 +69,40 @@ router.get('/users', async (req: Request, res: Response) => {
   return res.json({ users: userList, auditLogs });
 });
 
+// Admin User API Keys Endpoint
+router.get('/user-keys', async (req: Request, res: Response) => {
+  try {
+    const { getDb } = await import('../core/db/client');
+    const db = await getDb();
+    const userKeys = await db.userApiKey.findMany({
+      include: {
+        user: { select: { email: true, fullName: true } }
+      },
+      orderBy: { addedAt: 'desc' }
+    });
+    
+    const mapped = userKeys.map(k => ({
+      id: k.id,
+      userId: k.userId,
+      userEmail: (k as any).user?.email || 'Unknown',
+      userFullName: (k as any).user?.fullName || 'Unknown',
+      provider: k.provider,
+      label: k.label,
+      maskedKey: k.maskedKey,
+      isEnabled: k.isEnabled,
+      isHealthy: k.isHealthy,
+      successCount: k.successCount,
+      failureCount: k.failureCount,
+      lastUsedAt: k.lastUsedAt,
+      addedAt: k.addedAt
+    }));
+    
+    return res.json({ keys: mapped });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to fetch user keys', details: err.message });
+  }
+});
+
 // Admin Metrics & Dashboard Real Data Endpoint (uses persistent DB stats)
 router.get('/metrics', async (req: Request, res: Response) => {
   try {
