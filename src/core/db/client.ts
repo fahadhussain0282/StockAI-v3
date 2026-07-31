@@ -51,15 +51,31 @@ export async function initDb(): Promise<void> {
       _dbAvailable = true;
       console.log('[StockAI DB] Reusing existing Prisma client (hot-reload)');
       return;
-    }
+    // Parse URL to strip sslmode which overrides pg pool ssl config
+    const parsedUrl = new URL(DATABASE_URL);
+    parsedUrl.searchParams.delete('sslmode');
+    parsedUrl.searchParams.delete('pgbouncer');
+    parsedUrl.searchParams.delete('connection_limit');
+    
+    // ─── pg Pool + @prisma/adapter-pg (Supabase/standard PostgreSQL) ──────────
+    const { Pool } = await import('pg');
+    const { PrismaPg } = await import('@prisma/adapter-pg');
 
-    // ─── Native Prisma Client (Rust Engine) ──────────
-    const client = new PrismaClient({
-      datasources: {
-        db: {
-          url: DATABASE_URL,
-        },
+    const pool = new Pool({
+      connectionString: parsedUrl.toString(),
+      ssl: {
+        // Supabase requires SSL; rejectUnauthorized: false for self-signed certs
+        rejectUnauthorized: false
       },
+      max: process.env.NODE_ENV === 'production' ? 3 : 10, // Limit for serverless
+      idleTimeoutMillis: 60000,
+      connectionTimeoutMillis: 30000,
+    });
+
+    const adapter = new PrismaPg(pool);
+
+    const client = new PrismaClient({
+      adapter,
       log: process.env.NODE_ENV === 'development'
         ? ['warn', 'error']
         : ['error'],
