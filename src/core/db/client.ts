@@ -57,35 +57,32 @@ export async function initDb(): Promise<void> {
     // Parse URL to strip sslmode which overrides pg pool ssl config
     const parsedUrl = new URL(DATABASE_URL);
     parsedUrl.searchParams.delete('sslmode');
-    parsedUrl.searchParams.delete('pgbouncer');
-    parsedUrl.searchParams.delete('connection_limit');
-    
     // ─── pg Pool + @prisma/adapter-pg (Supabase/standard PostgreSQL) ──────────
+    // Vercel Serverless requires keepAlive to prevent idle TCP connections from being silently dropped by NAT.
     const { Pool } = await import('pg');
     const { PrismaPg } = await import('@prisma/adapter-pg');
 
     const pool = new Pool({
       connectionString: parsedUrl.toString(),
       ssl: {
-        // Supabase requires SSL; rejectUnauthorized: false for self-signed certs
+        // Supabase requires SSL; rejectUnauthorized: false for self-signed certs from the pooler
         rejectUnauthorized: false
       },
       max: process.env.NODE_ENV === 'production' ? 3 : 10, // Limit for serverless
-      idleTimeoutMillis: 60000,
-      connectionTimeoutMillis: 30000,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 15000,
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 10000,
     });
 
     const adapter = new PrismaPg(pool);
 
     const client = new PrismaClient({
       adapter,
-      log: process.env.NODE_ENV === 'development'
-        ? ['warn', 'error']
-        : ['error'],
+      log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
     });
 
     // Test connection
-    await client.$connect();
     await client.$queryRaw`SELECT 1`;
 
     _db = client;
