@@ -201,7 +201,11 @@ app.get('/api/health', (req: Request, res: Response) => {
       openai: Boolean(process.env.OPENAI_API_KEY),
       anthropic: Boolean(process.env.ANTHROPIC_API_KEY),
       groq: Boolean(process.env.GROQ_API_KEY),
-      xai: Boolean(process.env.XAI_API_KEY)
+      xai: Boolean(process.env.XAI_API_KEY),
+      openrouter: Boolean(process.env.OPENROUTER_API_KEY),
+      mistral: Boolean(process.env.MISTRAL_API_KEY),
+      deepseek: Boolean(process.env.DEEPSEEK_API_KEY),
+      together: Boolean(process.env.TOGETHER_API_KEY)
     },
     timestamp: new Date().toISOString()
   });
@@ -248,7 +252,11 @@ async function startServer() {
     process.env.OPENAI_API_KEY && 'OpenAI',
     process.env.ANTHROPIC_API_KEY && 'Claude',
     process.env.GROQ_API_KEY && 'Groq',
-    process.env.XAI_API_KEY && 'xAI'
+    process.env.XAI_API_KEY && 'xAI',
+    process.env.OPENROUTER_API_KEY && 'OpenRouter',
+    process.env.MISTRAL_API_KEY && 'Mistral',
+    process.env.DEEPSEEK_API_KEY && 'DeepSeek',
+    process.env.TOGETHER_API_KEY && 'Together'
   ].filter(Boolean).join(', ');
 
   app.listen(PORT, '0.0.0.0', () => {
