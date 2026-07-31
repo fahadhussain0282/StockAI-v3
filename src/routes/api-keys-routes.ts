@@ -177,6 +177,30 @@ router.delete('/:id', AuthMiddleware.authenticate, async (req: Request, res: Res
   }
 });
 
+// Edit a key's label
+router.put('/:id', AuthMiddleware.authenticate, async (req: Request, res: Response) => {
+  try {
+    const db = await getDb();
+    const userId = req.auth!.user.id;
+    const { label } = req.body;
+    
+    if (!label) {
+      return res.status(400).json({ error: 'Label is required for editing' });
+    }
+
+    const key = await db.userApiKey.findFirst({ where: { id: req.params.id, userId } });
+    if (!key) return res.status(404).json({ error: 'Key not found' });
+    
+    await db.userApiKey.update({
+      where: { id: key.id },
+      data: { label: label.trim() }
+    });
+    res.json({ status: 'ok', label: label.trim() });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to edit key' });
+  }
+});
+
 // Toggle key
 router.put('/:id/toggle', AuthMiddleware.authenticate, async (req: Request, res: Response) => {
   try {

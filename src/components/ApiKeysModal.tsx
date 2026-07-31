@@ -121,6 +121,26 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({ isOpen, onClose }) =
     }
   };
 
+  const handleEdit = async (id: string, currentLabel: string) => {
+    const newLabel = prompt('Enter new label for this key:', currentLabel);
+    if (newLabel === null || newLabel.trim() === currentLabel) return;
+    
+    try {
+      const token = localStorage.getItem('stockai_auth_token') || sessionStorage.getItem('stockai_auth_token') || '';
+      await fetch(`/api/user/keys/${id}`, {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}) 
+        },
+        body: JSON.stringify({ label: newLabel.trim() })
+      });
+      fetchKeys();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const handleToggle = async (id: string) => {
     try {
       const token = localStorage.getItem('stockai_auth_token') || sessionStorage.getItem('stockai_auth_token') || '';
@@ -359,6 +379,13 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({ isOpen, onClose }) =
                         </td>
                         <td className="p-3 pr-4 text-right">
                           <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => handleEdit(k.id, k.label)}
+                              className="p-1.5 rounded text-zinc-500 hover:text-blue-400 hover:bg-blue-400/10 transition-colors"
+                              title="Edit Label"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
+                            </button>
                             <button
                               onClick={() => handleToggle(k.id)}
                               className={`p-1.5 rounded transition-colors ${
