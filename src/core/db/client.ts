@@ -30,7 +30,8 @@ let _dbAvailable = false;
 export async function initDb(): Promise<void> {
   if (_db !== null) return;
 
-  const DATABASE_URL = process.env.DATABASE_URL;
+  // Prefer DIRECT_URL to bypass PgBouncer TLS self-signed cert and timeout issues on Vercel
+  const DATABASE_URL = process.env.DIRECT_URL || process.env.DATABASE_URL;
 
   if (!DATABASE_URL || DATABASE_URL.trim().length === 0) {
     console.warn(
@@ -54,6 +55,11 @@ export async function initDb(): Promise<void> {
 
     // ─── Native Prisma Client (Rust Engine) ──────────
     const client = new PrismaClient({
+      datasources: {
+        db: {
+          url: DATABASE_URL,
+        },
+      },
       log: process.env.NODE_ENV === 'development'
         ? ['warn', 'error']
         : ['error'],
