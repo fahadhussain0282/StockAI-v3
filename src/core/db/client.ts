@@ -69,10 +69,10 @@ export async function initDb(): Promise<void> {
         rejectUnauthorized: false
       },
       max: process.env.NODE_ENV === 'production' ? 3 : 10, // Limit for serverless
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 15000,
+      idleTimeoutMillis: 1000, // Close connections quickly to avoid NAT dropping them while Vercel container is frozen
+      connectionTimeoutMillis: 5000,
       keepAlive: true,
-      keepAliveInitialDelayMillis: 10000,
+      allowExitOnIdle: true,
     });
 
     const adapter = new PrismaPg(pool);
