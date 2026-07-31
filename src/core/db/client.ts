@@ -51,6 +51,8 @@ export async function initDb(): Promise<void> {
       _dbAvailable = true;
       console.log('[StockAI DB] Reusing existing Prisma client (hot-reload)');
       return;
+    }
+    
     // Parse URL to strip sslmode which overrides pg pool ssl config
     const parsedUrl = new URL(DATABASE_URL);
     parsedUrl.searchParams.delete('sslmode');
