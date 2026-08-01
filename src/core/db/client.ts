@@ -67,14 +67,15 @@ async function _doInitDb(): Promise<void> {
     }
 
     // Parse URL to strip sslmode (we configure ssl via pg pool options)
-    const parsedUrl = new URL(DATABASE_URL);
-    parsedUrl.searchParams.delete('sslmode');
-
     const { Pool } = await import('pg');
     const { PrismaPg } = await import('@prisma/adapter-pg');
 
+    const rawUrl = new URL(`${process.env.DATABASE_URL}`);
+    rawUrl.searchParams.delete('sslmode');
+    const connectionString = rawUrl.toString();
+
     const pool = new Pool({
-      connectionString: parsedUrl.toString(),
+      connectionString,
       ssl: {
         rejectUnauthorized: false  // Required for Supabase PgBouncer pooler SSL
       },
