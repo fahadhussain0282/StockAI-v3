@@ -146,6 +146,7 @@ process.on('uncaughtException', (err: Error) => {
 });
 
 const app = express();
+app.set('trust proxy', 1); // Trust Vercel proxy for rate-limit X-Forwarded-For
 const PORT = Number(process.env.PORT || 3002);
 const SERVER_START_TIME = Date.now();
 
@@ -202,6 +203,15 @@ app.use('/api/generate-prompt', maintenanceCheck);
 // Increase payload limit for base64 image uploads
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Handle invalid JSON gracefully instead of crashing
+app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+  if (err instanceof SyntaxError && 'body' in err) {
+    console.error('[StockAI] Unhandled Express Error: Invalid JSON', err.message);
+    return res.status(400).json({ error: 'Invalid JSON payload', code: 'INVALID_JSON' });
+  }
+  next(err);
+});
 
 // ─── Health Check API ─────────────────────────────────────────────────────────
 app.get('/api/health', (req: Request, res: Response) => {
