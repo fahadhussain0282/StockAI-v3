@@ -6,14 +6,19 @@
  *
  * Priority:
  *  1. DATABASE_URL set → PostgreSQL via pg pool (production)
- *  2. DATABASE_URL not set → in-memory fallback (development without DB)
+ *  2. DATABASE_URL not set → throws clear error (no silent in-memory fallback in production)
  *
- * Usage: import { db, isDbAvailable } from './client'
+ * Usage:
+ *   import { getDb, isDbAvailable, initDb } from './client'
+ *
+ *   // In route handlers — always use requireDb() for safety:
+ *   const db = await requireDb(res); // returns db or sends 503 and returns null
  */
 
 import { PrismaClient } from '@prisma/client';
+import type { Response } from 'express';
 
-// ─── Singleton pattern (required for hot-reload environments) ─────────────────
+// ─── Singleton ─────────────────────────────────────────────────────────────────
 
 declare global {
   // eslint-disable-next-line no-var
@@ -22,55 +27,60 @@ declare global {
 
 let _db: PrismaClient | null = null;
 let _dbAvailable = false;
+let _initPromise: Promise<void> | null = null;
 
 /**
  * Initializes the database client.
  * Safe to call multiple times — only initializes once (singleton).
+ * Returns a promise — awaiting ensures DB is ready before first request.
  */
 export async function initDb(): Promise<void> {
+  // Return existing promise if initialization already in progress
+  if (_initPromise) return _initPromise;
   if (_db !== null) return;
 
-  // Use DATABASE_URL (port 6543 IPv4 pooler) to avoid Vercel IPv6 outbound timeouts.
-  // The pg adapter with rejectUnauthorized: false handles the pooler's self-signed cert.
+  _initPromise = _doInitDb();
+  return _initPromise;
+}
+
+async function _doInitDb(): Promise<void> {
   const DATABASE_URL = process.env.DATABASE_URL;
 
   if (!DATABASE_URL || DATABASE_URL.trim().length === 0) {
-    console.warn(
+    const msg =
       '\n⚠️  [StockAI DB] DATABASE_URL is not set.\n' +
-      '   The application will use an in-memory fallback store.\n' +
-      '   Data will NOT persist across server restarts.\n' +
-      '   For production: add DATABASE_URL to .env (Supabase PostgreSQL connection string)\n'
-    );
+      '   Production requires a Supabase PostgreSQL connection string.\n' +
+      '   Add DATABASE_URL to your Vercel environment variables.\n';
+    console.warn(msg);
     _dbAvailable = false;
+    _initPromise = null;
     return;
   }
 
   try {
-    // Use the global singleton in development (prevents connection exhaustion during hot reload)
+    // Reuse singleton in development (prevents connection exhaustion during hot reload)
     if (global.__prisma) {
       _db = global.__prisma;
       _dbAvailable = true;
       console.log('[StockAI DB] Reusing existing Prisma client (hot-reload)');
       return;
     }
-    
-    // Parse URL to strip sslmode which overrides pg pool ssl config
+
+    // Parse URL to strip sslmode (we configure ssl via pg pool options)
     const parsedUrl = new URL(DATABASE_URL);
     parsedUrl.searchParams.delete('sslmode');
-    // ─── pg Pool + @prisma/adapter-pg (Supabase/standard PostgreSQL) ──────────
-    // Vercel Serverless requires keepAlive to prevent idle TCP connections from being silently dropped by NAT.
+
     const { Pool } = await import('pg');
     const { PrismaPg } = await import('@prisma/adapter-pg');
 
     const pool = new Pool({
       connectionString: parsedUrl.toString(),
       ssl: {
-        // Supabase requires SSL; rejectUnauthorized: false for self-signed certs from the pooler
-        rejectUnauthorized: false
+        rejectUnauthorized: false  // Required for Supabase PgBouncer pooler SSL
       },
-      max: process.env.NODE_ENV === 'production' ? 3 : 10, // Limit for serverless
-      idleTimeoutMillis: 1000, // Close connections quickly to avoid NAT dropping them while Vercel container is frozen
-      connectionTimeoutMillis: 5000,
+      max: process.env.NODE_ENV === 'production' ? 3 : 10,
+      idleTimeoutMillis: 1000,        // Close idle connections quickly (Vercel freeze)
+      connectionTimeoutMillis: 8000,  // 8s timeout (was 5s — too short for cold starts)
       keepAlive: true,
       allowExitOnIdle: true,
     });
@@ -82,8 +92,23 @@ export async function initDb(): Promise<void> {
       log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
     });
 
-    // Test connection
-    await client.$queryRaw`SELECT 1`;
+    // Test connection with retry (Vercel cold starts can be slow)
+    let lastErr: Error | null = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await client.$queryRaw`SELECT 1`;
+        lastErr = null;
+        break;
+      } catch (err: any) {
+        lastErr = err;
+        if (attempt < 3) {
+          console.warn(`[StockAI DB] Connection attempt ${attempt} failed, retrying... ${err?.message}`);
+          await new Promise(r => setTimeout(r, 500 * attempt));
+        }
+      }
+    }
+
+    if (lastErr) throw lastErr;
 
     _db = client;
     _dbAvailable = true;
@@ -95,17 +120,49 @@ export async function initDb(): Promise<void> {
     console.log('[StockAI DB] ✅ Supabase PostgreSQL connected successfully');
   } catch (err: any) {
     console.error('[StockAI DB] ❌ Database connection failed:', err?.message);
-    console.warn('[StockAI DB] Falling back to in-memory store. Check DATABASE_URL and Supabase network settings.');
     _db = null;
     _dbAvailable = false;
+    _initPromise = null; // Allow retry on next request
   }
 }
 
 /**
- * Returns the Prisma client instance (or null if DB not available).
+ * Returns the Prisma client synchronously, or null if not available.
+ * Use requireDb() in route handlers for automatic error responses.
  */
 export function getDb(): PrismaClient | null {
   return _db;
+}
+
+/**
+ * Returns the Prisma client, initializing if needed.
+ * Awaitable — use in route handlers that need DB.
+ */
+export async function getDbAsync(): Promise<PrismaClient | null> {
+  if (!_db) await initDb();
+  return _db;
+}
+
+/**
+ * Route handler helper — gets DB or sends 503 response.
+ * Returns PrismaClient if available, null if 503 was sent.
+ *
+ * Usage:
+ *   const db = await requireDb(res);
+ *   if (!db) return; // 503 already sent
+ */
+export async function requireDb(res: Response): Promise<PrismaClient | null> {
+  const db = await getDbAsync();
+  if (!db) {
+    if (!res.headersSent) {
+      res.status(503).json({
+        error: 'Database is currently unavailable. Please try again in a moment.',
+        code: 'DB_UNAVAILABLE'
+      });
+    }
+    return null;
+  }
+  return db;
 }
 
 /**
@@ -123,6 +180,7 @@ export async function disconnectDb(): Promise<void> {
     await _db.$disconnect();
     _db = null;
     _dbAvailable = false;
+    _initPromise = null;
   }
 }
 

@@ -351,7 +351,7 @@ export const ApiKeysModal: React.FC<ApiKeysModalProps> = ({ isOpen, onClose }) =
                         <td className="p-3">
                           <div className="font-mono text-xs text-zinc-400 flex items-center gap-2">
                             {k.maskedKey}
-                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500/50" title="AES-256-GCM Encrypted" />
+                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500/50" aria-label="AES-256-GCM Encrypted" />
                           </div>
                         </td>
                         <td className="p-3">

@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { AuthMiddleware, userStore } from '../core/auth';
-import { isDbAvailable } from '../core/db/client';
+import { isDbAvailable, requireDb } from '../core/db/client';
 import { 
   planStore, 
   licenseStore, 
@@ -72,8 +72,9 @@ router.get('/users', async (req: Request, res: Response) => {
 // Admin User API Keys Endpoint
 router.get('/user-keys', async (req: Request, res: Response) => {
   try {
-    const { getDb } = await import('../core/db/client');
-    const db = await getDb();
+    const db = await requireDb(res);
+    if (!db) return; // 503 already sent
+
     const userKeys = await db.userApiKey.findMany({
       include: {
         user: { select: { email: true, fullName: true } }
@@ -99,7 +100,10 @@ router.get('/user-keys', async (req: Request, res: Response) => {
     
     return res.json({ keys: mapped });
   } catch (err: any) {
-    return res.status(500).json({ error: 'Failed to fetch user keys', details: err.message });
+    console.error('[Admin] GET /user-keys error:', err?.message);
+    if (!res.headersSent) {
+      return res.status(500).json({ error: 'Failed to fetch user keys', details: err.message });
+    }
   }
 });
 

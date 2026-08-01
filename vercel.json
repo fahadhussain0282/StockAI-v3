@@ -1,7 +1,12 @@
 {
-  "name": "stockai",
+  "name": "stockai-v3",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "functions": {
+    "api/index.ts": {
+      "maxDuration": 30
+    }
+  },
   "rewrites": [
     {
       "source": "/api/(.*)",

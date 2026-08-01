@@ -907,12 +907,6 @@ export default function App() {
       <ApiKeysModal
         isOpen={isApiKeysOpen}
         onClose={() => setIsApiKeysOpen(false)}
-        selectedProvider={selectedProvider}
-        setSelectedProvider={setSelectedProvider}
-        providerKeys={providerKeys}
-        setProviderKey={setProviderKey}
-        providerModels={providerModels}
-        setProviderModel={setProviderModel}
       />
 
       <ZoomModal
