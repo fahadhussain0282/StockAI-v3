@@ -137,8 +137,8 @@ export class Gateway {
               .sort(() => Math.random() - 0.5)
               .map(k => ({ id: k.id, key: decryptKey(k.encryptedKey), label: k.label, type: 'user' }));
           } else {
-            console.warn(`[AI Gateway] Skipping ${providerId} — no User API keys found for this provider`);
-            continue;
+            console.log(`[AI Gateway] No User API keys found for ${providerId}, falling back to admin pool`);
+            keyIterator = [];
           }
         } catch (err) {
           console.warn('[AI Gateway] Failed to fetch user keys, falling back to admin pool', err);
