@@ -73,7 +73,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       if (contentType && contentType.includes('application/json')) {
         data = await res.json();
       } else {
-        throw new Error('Authentication service is temporarily unavailable.');
+        throw new Error(`Server error (HTTP ${res.status}). Please try again in a moment.`);
       }
 
       if (!res.ok) {
@@ -120,7 +120,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       if (contentType && contentType.includes('application/json')) {
         data = await res.json();
       } else {
-        throw new Error('Authentication service is temporarily unavailable.');
+        throw new Error(`Google auth server error (HTTP ${res.status}). Please try again.`);
       }
 
       if (!res.ok) {
@@ -201,7 +201,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       if (contentType && contentType.includes('application/json')) {
         data = await res.json();
       } else {
-        throw new Error('Authentication service is temporarily unavailable.');
+        throw new Error(`Signup server error (HTTP ${res.status}). Please try again in a moment.`);
       }
 
       if (!res.ok) {

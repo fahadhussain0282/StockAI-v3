@@ -6,7 +6,7 @@
  *
  * Priority:
  *  1. DATABASE_URL set → PostgreSQL via pg pool (production)
- *  2. DATABASE_URL not set → throws clear error (no silent in-memory fallback in production)
+ *  2. DATABASE_URL not set → logs warning, falls back to in-memory store
  *
  * Usage:
  *   import { getDb, isDbAvailable, initDb } from './client'
@@ -18,12 +18,7 @@
 import { PrismaClient } from '@prisma/client';
 import type { Response } from 'express';
 
-// ─── Singleton ─────────────────────────────────────────────────────────────────
-
-declare global {
-  // eslint-disable-next-line no-var
-  var __prisma: PrismaClient | undefined;
-}
+// ─── State ─────────────────────────────────────────────────────────────────────
 
 let _db: PrismaClient | null = null;
 let _dbAvailable = false;
@@ -47,30 +42,23 @@ async function _doInitDb(): Promise<void> {
   const DATABASE_URL = process.env.DATABASE_URL;
 
   if (!DATABASE_URL || DATABASE_URL.trim().length === 0) {
-    const msg =
+    console.warn(
       '\n⚠️  [StockAI DB] DATABASE_URL is not set.\n' +
       '   Production requires a Supabase PostgreSQL connection string.\n' +
-      '   Add DATABASE_URL to your Vercel environment variables.\n';
-    console.warn(msg);
+      '   Add DATABASE_URL to your Vercel environment variables.\n' +
+      '   Falling back to in-memory store (data will be lost on restart).\n'
+    );
     _dbAvailable = false;
     _initPromise = null;
     return;
   }
 
   try {
-    // Reuse singleton in development (prevents connection exhaustion during hot reload)
-    if (global.__prisma) {
-      _db = global.__prisma;
-      _dbAvailable = true;
-      console.log('[StockAI DB] Reusing existing Prisma client (hot-reload)');
-      return;
-    }
-
-    // Parse URL to strip sslmode (we configure ssl via pg pool options)
     const { Pool } = await import('pg');
     const { PrismaPg } = await import('@prisma/adapter-pg');
 
-    const rawUrl = new URL(`${process.env.DATABASE_URL}`);
+    // Strip sslmode from URL — we configure SSL via pool options
+    const rawUrl = new URL(DATABASE_URL);
     rawUrl.searchParams.delete('sslmode');
     const connectionString = rawUrl.toString();
 
@@ -79,10 +67,10 @@ async function _doInitDb(): Promise<void> {
       ssl: {
         rejectUnauthorized: false  // Required for Supabase PgBouncer pooler SSL
       },
-      max: process.env.NODE_ENV === 'production' ? 3 : 10,
-      idleTimeoutMillis: 1000,        // Close idle connections quickly (Vercel freeze)
-      connectionTimeoutMillis: 8000,  // 8s timeout (was 5s — too short for cold starts)
-      keepAlive: true,
+      max: 3,                         // Low pool size for Vercel serverless (each fn has its own)
+      idleTimeoutMillis: 10000,       // 10s idle before closing (Vercel freeze)
+      connectionTimeoutMillis: 10000, // 10s timeout (allows for cold-start latency)
+      keepAlive: false,               // Disable keepAlive for serverless — connections are ephemeral
       allowExitOnIdle: true,
     });
 
@@ -90,10 +78,10 @@ async function _doInitDb(): Promise<void> {
 
     const client = new PrismaClient({
       adapter,
-      log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
+      log: ['error'],
     });
 
-    // Test connection with retry (Vercel cold starts can be slow)
+    // Test connection with retry (Vercel cold starts can have high latency)
     let lastErr: Error | null = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
@@ -103,7 +91,7 @@ async function _doInitDb(): Promise<void> {
       } catch (err: any) {
         lastErr = err;
         if (attempt < 3) {
-          console.warn(`[StockAI DB] Connection attempt ${attempt} failed, retrying... ${err?.message}`);
+          console.warn(`[StockAI DB] Connection attempt ${attempt}/3 failed — retrying in ${500 * attempt}ms... (${err?.message})`);
           await new Promise(r => setTimeout(r, 500 * attempt));
         }
       }
@@ -114,16 +102,14 @@ async function _doInitDb(): Promise<void> {
     _db = client;
     _dbAvailable = true;
 
-    if (process.env.NODE_ENV !== 'production') {
-      global.__prisma = client;
-    }
-
     console.log('[StockAI DB] ✅ Supabase PostgreSQL connected successfully');
   } catch (err: any) {
-    console.error('[StockAI DB] ❌ Database connection failed:', err?.message);
+    console.error('[StockAI DB] ❌ Database connection FAILED:', err?.message);
+    console.error('[StockAI DB]    DATABASE_URL prefix:', process.env.DATABASE_URL?.substring(0, 40) + '...');
+    console.error('[StockAI DB]    Falling back to in-memory store. Set DATABASE_URL in Vercel env vars.');
     _db = null;
     _dbAvailable = false;
-    _initPromise = null; // Allow retry on next request
+    _initPromise = null; // Allow retry on next cold start
   }
 }
 

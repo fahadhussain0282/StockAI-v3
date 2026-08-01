@@ -30,18 +30,18 @@ try {
 const GOOGLE_CLIENT_ID = (import.meta as any).env.VITE_GOOGLE_CLIENT_ID as string | undefined;
 
 if (!GOOGLE_CLIENT_ID) {
-  // Throw at app startup so the error is immediately visible in the browser console.
-  // This prevents silent failure with a fake client ID.
-  throw new Error(
+  // Log error but do NOT throw — throwing here crashes the entire app,
+  // making even email login/signup impossible.
+  console.error(
     '[StockAI] VITE_GOOGLE_CLIENT_ID is not set. ' +
     'Add it to your .env file (local) and to Vercel Environment Variables (production). ' +
-    'Google Sign-In will not work without it.'
+    'Google Sign-In will not work without it. Email login/signup still works.'
   );
 }
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID || 'google-oauth-not-configured'}>
       <App />
     </GoogleOAuthProvider>
   </StrictMode>

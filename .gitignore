@@ -40,6 +40,10 @@ yarn-error.log*
 .env.vercel
 .env.vercel.prod
 .env.vercel.test
+.env.vercel.current
+
+# Sensitive utility scripts (contain credentials)
+push-all-envs.js
 
 # Cache and temporary files
 .npm
@@ -56,3 +60,4 @@ test_token.txt
 evidence_output.txt
 production_report.txt
 temp.txt
+.vercel
