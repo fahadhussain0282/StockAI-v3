@@ -160,6 +160,21 @@ export function isDbAvailable(): boolean {
 }
 
 /**
+ * Forces a full DB reconnection.
+ * Use when a query fails with "Connection terminated" — the pool has stale connections
+ * from a previous Vercel invocation that was frozen and resumed.
+ */
+export async function resetDb(): Promise<void> {
+  if (_db) {
+    try { await _db.$disconnect(); } catch { /* ignore */ }
+    _db = null;
+  }
+  _dbAvailable = false;
+  _initPromise = null;
+  return initDb();
+}
+
+/**
  * Disconnects the Prisma client. Call on server shutdown.
  */
 export async function disconnectDb(): Promise<void> {

@@ -183,7 +183,25 @@ class UserStoreImpl {
         include: { subscription: true }
       });
       return row ? prismaUserToRecord(row) : null;
-    } catch (e) {
+    } catch (e: any) {
+      // If DB connection was terminated (stale Vercel pool), try to re-init and retry once
+      const isConnErr = e?.message?.includes('Connection terminated') || e?.message?.includes('connection') || e?.code === 'ECONNRESET';
+      if (isConnErr) {
+        console.warn('[UserStore] findUserById: DB connection lost — reinitializing...');
+        try {
+          const { resetDb } = await import('../db/client');
+          await resetDb();
+          const row = await this.db!.user.findUnique({
+            where: { id },
+            include: { subscription: true }
+          });
+          return row ? prismaUserToRecord(row) : null;
+        } catch (retryErr: any) {
+          console.error('[UserStore] findUserById retry failed:', retryErr?.message);
+          // Fall back to in-memory if DB still unavailable
+          return this.fallback.findUserById(id);
+        }
+      }
       console.error('[UserStore] findUserById error:', e); return null;
     }
   }
