@@ -86,12 +86,13 @@ async function seedAdminUsers() {
   const ADMIN_EMAILS = [
     { email: 'fahadhussain0282@gmail.com', fullName: 'Fahad Hussain',      passwordHash: 'legacy:admin_seed_1', plan: '1 Month Plan', days: 30,  price: 300 },
     { email: 'adobeicon99@gmail.com',      fullName: 'Adobe Icon Studio',  passwordHash: 'legacy:admin_seed_2', plan: '6 Months Plan', days: 180, price: 2000 },
+    { email: 'admin@stockai.com',          fullName: 'StockAI Admin',      passwordHash: 'legacy:admin_seed_3', plan: '1 Month Plan', days: 30,  price: 300 },
   ];
   for (const a of ADMIN_EMAILS) {
     try {
       const existing = await userStore.findUserByEmail(a.email);
+      const now = new Date().toISOString();
       if (!existing) {
-        const now = new Date().toISOString();
         await userStore.createUser({
           id: `usr_admin_${a.email.split('@')[0].replace(/[^a-z0-9]/g, '')}`,
           fullName: a.fullName,
@@ -120,6 +121,16 @@ async function seedAdminUsers() {
           totalCsvExports: 0
         });
         console.log(`[StockAI] Admin seeded: ${a.email}`);
+      } else {
+        const { getDb } = await import('./src/core/db/client');
+        const db = await getDb();
+        if (db) {
+          await db.user.update({
+            where: { email: a.email },
+            data: { role: 'admin', status: 'active' }
+          });
+          console.log(`[StockAI] Admin updated to active: ${a.email}`);
+        }
       }
     } catch (err: any) {
       // Ignore duplicate — admin already exists in DB

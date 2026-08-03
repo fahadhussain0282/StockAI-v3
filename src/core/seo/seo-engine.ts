@@ -63,7 +63,7 @@ export class SeoEngine {
 
     const targetPlatform = marketplaceRule.id;
     const titleLength = settings?.titleLength || marketplaceRule.titleMaxLength || 70;
-    const keywordsCount = settings?.keywordsCount || 30;
+    const keywordsCount = settings?.keywordsCount || 49;
 
     console.log(`[SeoEngine] Generating metadata: file="${fileName || fileId}" type=${fileType} platform=${targetPlatform} provider=${provider}`);
 
