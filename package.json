@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.cjs",
     "lint": "tsc --noEmit",
-    "postinstall": "prisma generate && prisma db push --accept-data-loss"
+    "postinstall": "prisma generate",
+    "db:push": "prisma db push --accept-data-loss"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
