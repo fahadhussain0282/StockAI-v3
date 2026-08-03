@@ -103,10 +103,10 @@ export class OpenAiProvider extends BaseAiProvider {
       }
       if (res.status === 429) {
         const errText = await res.text();
-        if (errText.toLowerCase().includes('quota') || errText.toLowerCase().includes('billing')) {
-          throw new Error('QUOTA_EXHAUSTED: OpenAI quota exceeded or billing issue.');
+        if (errText.toLowerCase().includes('quota') || errText.toLowerCase().includes('billing') || errText.toLowerCase().includes('exceeded')) {
+          throw new Error('QUOTA_EXHAUSTED: OpenAI quota exceeded or billing issue. RAW RESPONSE: ' + errText);
         }
-        throw new Error('RATE_LIMIT: OpenAI rate limit reached. Please retry shortly.');
+        throw new Error('RATE_LIMIT: OpenAI rate limit reached. Please retry shortly. RAW RESPONSE: ' + errText);
       }
       if (!res.ok) {
         const errStr = await res.text();

@@ -345,12 +345,51 @@ export default function App() {
 
       const previewUrl = URL.createObjectURL(file);
       
-      // Convert to base64
-      const base64Data = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.readAsDataURL(file);
-      });
+      // Convert to base64 (compress if image to bypass Vercel 4.5MB payload limit)
+      let base64Data = '';
+      if (fileType === 'image' && !file.type.includes('svg')) {
+        base64Data = await new Promise<string>((resolve) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const MAX_SIZE = 1024;
+            let width = img.width;
+            let height = img.height;
+            if (width > height && width > MAX_SIZE) {
+              height *= MAX_SIZE / width;
+              width = MAX_SIZE;
+            } else if (height > MAX_SIZE) {
+              width *= MAX_SIZE / height;
+              height = MAX_SIZE;
+            }
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(img, 0, 0, width, height);
+              resolve(canvas.toDataURL('image/jpeg', 0.8)); // compress to JPEG 80%
+            } else {
+              // Fallback if canvas context fails
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.readAsDataURL(file);
+            }
+          };
+          img.onerror = () => {
+            // Fallback on error
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.readAsDataURL(file);
+          };
+          img.src = previewUrl;
+        });
+      } else {
+        base64Data = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(file);
+        });
+      }
 
       newFiles.push({
         id: `file_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,

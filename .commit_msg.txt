@@ -1,0 +1,9 @@
+fix: verbose AI gateway logging + xAI 400 fix + keyIterator init bug
+
+FIXES:
+1. [Gateway] Added verbose per-request logging
+2. [Gateway] Fixed keyIterator initialization bug (undefined when no userId/DB)
+3. [Gateway] Fixed customApiKey empty-string pass-through bug
+4. [xAI] Fixed Bad Request (400) - vision requests reject response_format json_object
+5. [SeoEngine] Added verbose GATEWAY FAILURE logging
+6. [AI Routes] Added verbose REQUEST logging
