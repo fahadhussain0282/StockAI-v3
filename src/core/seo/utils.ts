@@ -39,7 +39,7 @@ export function sanitizeErrorMessage(msg: any): string {
       // ignore
     }
   }
-  return str.length > 180 ? str.slice(0, 180) + '...' : str;
+  return str.length > 2000 ? str.slice(0, 2000) + '...' : str;
 }
 
 export async function resolveBase64Image(base64Data?: string, previewUrl?: string, mimeType?: string): Promise<{ resolvedBase64: string | undefined; resolvedMimeType: string }> {
