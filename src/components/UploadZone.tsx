@@ -25,15 +25,22 @@ interface UploadZoneProps {
   onOpenPricing: () => void;
   onOpenApiKeys: () => void;
   hasCreditsOrKey: boolean;
+  onViewTrace?: (trace: any[]) => void;
 }
 
-const QueueCard = memo(({ f, onRemoveFile }: { f: UploadedFile; onRemoveFile: (id: string) => void }) => (
+interface QueueCardProps {
+  f: UploadedFile;
+  onRemove: (id: string) => void;
+  onViewTrace?: (trace: any[]) => void;
+}
+
+const QueueCard: React.FC<QueueCardProps> = React.memo(({ f, onRemove, onViewTrace }) => (
   <div
     key={f.id}
     className="bg-zinc-900/60 border border-zinc-800 rounded-lg p-2 relative group flex flex-col gap-1.5 transition-opacity"
   >
     <button
-      onClick={() => onRemoveFile(f.id)}
+      onClick={() => onRemove(f.id)}
       className="absolute top-1 right-1 w-5 h-5 rounded bg-zinc-950 text-zinc-400 hover:text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 cursor-pointer"
     >
       <X className="w-3 h-3" />
@@ -64,7 +71,15 @@ const QueueCard = memo(({ f, onRemoveFile }: { f: UploadedFile; onRemoveFile: (i
       ) : f.status === 'error' ? (
         <div className="absolute inset-0 bg-red-950/90 flex flex-col items-center justify-center text-[10px] text-red-200 font-semibold p-1.5 text-center z-20">
           <AlertCircle className="w-3.5 h-3.5 mb-1 shrink-0" />
-          <span className="leading-tight line-clamp-2" title={f.error}>{f.error || 'Failed'}</span>
+          <span className="leading-tight line-clamp-1" title={f.error}>{f.error || 'Failed'}</span>
+          {f.trace && f.trace.length > 0 && onViewTrace && (
+            <button 
+              onClick={() => onViewTrace(f.trace!)}
+              className="mt-1 text-[8px] bg-red-900/50 hover:bg-red-800 border border-red-700/50 text-red-100 px-1 py-0.5 rounded transition-colors"
+            >
+              View Trace
+            </button>
+          )}
         </div>
       ) : null}
     </div>
@@ -87,7 +102,8 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
   isGenerating,
   onOpenPricing,
   onOpenApiKeys,
-  hasCreditsOrKey
+  hasCreditsOrKey,
+  onViewTrace
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -181,7 +197,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
 
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 max-h-56 overflow-y-auto p-1 scrollbar-thin">
               {files.map(f => (
-                <QueueCard key={f.id} f={f} onRemoveFile={onRemoveFile} />
+                <QueueCard key={f.id} f={f} onRemove={onRemoveFile} onViewTrace={onViewTrace} />
               ))}
             </div>
           </div>

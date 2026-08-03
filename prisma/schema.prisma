@@ -228,3 +228,62 @@ model UserProviderSettings {
 
   user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
+
+// ─── Provider Health ──────────────────────────────────────────────────────────
+
+model ProviderHealth {
+  id                String   @id @default(cuid())
+  providerId        String   @unique
+  isEnabled         Boolean  @default(true)
+  isHealthy         Boolean  @default(true)
+  successRate       Float    @default(100.0)
+  avgLatencyMs      Float    @default(0)
+  totalRequests     Int      @default(0)
+  successCount      Int      @default(0)
+  failureCount      Int      @default(0)
+  consecutiveFails  Int      @default(0)
+  lastSuccessAt     DateTime?
+  lastFailureAt     DateTime?
+  cooldownUntil     DateTime?
+  updatedAt         DateTime @updatedAt
+  
+  @@index([providerId])
+  @@index([isEnabled, isHealthy])
+}
+
+// ─── Prompt Templates (Versioning) ────────────────────────────────────────────
+
+model PromptTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  version     Int      @default(1)
+  content     String
+  target      String   @default("general") // adobe, shutterstock, general
+  isActive    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([name, version])
+  @@index([name, isActive])
+}
+
+// ─── Background Job Queue ─────────────────────────────────────────────────────
+
+model JobQueue {
+  id          String   @id @default(cuid())
+  userId      String
+  type        String   // e.g. "batch_generation", "csv_export"
+  status      String   @default("pending") // pending, processing, completed, failed, retrying
+  payload     String   // JSON payload of job data
+  result      String?  // JSON result or error
+  progress    Int      @default(0)
+  totalItems  Int      @default(1)
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}

@@ -61,5 +61,11 @@ export abstract class BaseAiProvider {
     return model.capabilities;
   }
 
-  abstract generateVisionAnalysis(options: GenerateVisionOptions): Promise<NormalizedAiResponse>;
+  abstract generateMetadata(options: GenerateVisionOptions): Promise<NormalizedAiResponse>;
+  abstract generateKeywords(options: GenerateVisionOptions): Promise<string[]>;
+  abstract healthCheck(): Promise<{ isHealthy: boolean; message: string; latency: number }>;
+
+  getModels(): AiModelDefinition[] {
+    return this.listModels();
+  }
 }

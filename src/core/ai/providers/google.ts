@@ -38,7 +38,7 @@ export class GoogleProvider extends BaseAiProvider {
     return [GOOGLE_DEFAULT_TEXT_MODEL, ...GOOGLE_VISION_FALLBACK_CHAIN];
   }
 
-  async generateVisionAnalysis(options: GenerateVisionOptions): Promise<NormalizedAiResponse> {
+  async generateMetadata(options: GenerateVisionOptions): Promise<NormalizedAiResponse> {
     const key = (options.customApiKey && options.customApiKey.trim().length > 0)
       ? options.customApiKey.trim()
       : process.env.GEMINI_API_KEY;
@@ -196,4 +196,22 @@ export class GoogleProvider extends BaseAiProvider {
       return { valid: false, message: `Gemini error: ${msg.slice(0, 100)}` };
     }
   }
+
+  async generateKeywords(options: GenerateVisionOptions): Promise<string[]> {
+    const meta = await this.generateMetadata(options);
+    return meta.parsedResponse?.keywords || [];
+  }
+
+
+  async healthCheck(): Promise<{ isHealthy: boolean; message: string; latency: number }> {
+    const start = Date.now();
+    try {
+      const key = process.env[this.id.toUpperCase() + '_API_KEY'] || '';
+      const res = await this.validateKey(key);
+      return { isHealthy: res.valid, message: res.message, latency: Date.now() - start };
+    } catch (e: any) {
+      return { isHealthy: false, message: e.message, latency: Date.now() - start };
+    }
+  }
+
 }

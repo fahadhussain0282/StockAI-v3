@@ -40,7 +40,7 @@ export class TogetherProvider extends BaseAiProvider {
     return TOGETHER_TEXT_FALLBACK_CHAIN;
   }
 
-  async generateVisionAnalysis(options: GenerateVisionOptions): Promise<NormalizedAiResponse> {
+  async generateMetadata(options: GenerateVisionOptions): Promise<NormalizedAiResponse> {
     const key = (options.customApiKey && options.customApiKey.trim().length > 0)
       ? options.customApiKey.trim()
       : process.env.TOGETHER_API_KEY;
@@ -185,4 +185,22 @@ export class TogetherProvider extends BaseAiProvider {
       return { valid: false, message: `Network error: ${err.message}` };
     }
   }
+
+  async generateKeywords(options: GenerateVisionOptions): Promise<string[]> {
+    const meta = await this.generateMetadata(options);
+    return meta.parsedResponse?.keywords || [];
+  }
+
+
+  async healthCheck(): Promise<{ isHealthy: boolean; message: string; latency: number }> {
+    const start = Date.now();
+    try {
+      const key = process.env[this.id.toUpperCase() + '_API_KEY'] || '';
+      const res = await this.validateKey(key);
+      return { isHealthy: res.valid, message: res.message, latency: Date.now() - start };
+    } catch (e: any) {
+      return { isHealthy: false, message: e.message, latency: Date.now() - start };
+    }
+  }
+
 }

@@ -286,35 +286,44 @@ router.post('/generate-metadata', async (req: Request, res: Response) => {
         )
       ]);
     } catch (genErr: any) {
-      const errMsg = (genErr instanceof Error ? genErr.message : String(genErr)) || 'Generation failed';
+      let errMsg = (genErr instanceof Error ? genErr.message : String(genErr)) || 'Generation failed';
+      let trace: any = null;
+      let errorCode = 'GENERATION_FAILED';
+
+      // Attempt to parse structured gateway error
+      try {
+        const parsed = JSON.parse(errMsg);
+        if (parsed.trace) {
+          trace = parsed.trace;
+          errMsg = parsed.message;
+          errorCode = parsed.code || errorCode;
+        }
+      } catch (e) {
+        // Not a structured JSON error, keep original message
+      }
+
       console.error('[generate-metadata] Generation error:', errMsg);
       const isTimeout = errMsg.includes('GENERATION_TIMEOUT') || errMsg.includes('timed out');
       const isAuthError = errMsg.includes('AUTH_ERROR') || errMsg.includes('API_KEY_INVALID') || errMsg.includes('invalid key') || errMsg.includes('Invalid API Key');
       const isNoProviders = errMsg.includes('No API keys') || errMsg.includes('No available') || errMsg.includes('All configured providers');
       const elapsed = Date.now() - routeStart;
-      // Log telemetry failure to DB (non-blocking)
+
       if (isDbAvailable()) {
         getDb()!.telemetryLog.create({
           data: {
-            requestId,
-            userId: authResult.userId,
-            provider: 'unknown',
-            model: 'unknown',
-            responseTimeMs: elapsed,
-            success: false,
+            requestId, userId: authResult.userId, provider: 'unknown', model: 'unknown',
+            responseTimeMs: elapsed, success: false,
             errorType: isTimeout ? 'timeout' : isAuthError ? 'auth_error' : 'generation_error',
-            errorMessage: errMsg.slice(0, 250),
-            fileName: req.body.fileName,
-            fileType: req.body.fileType,
+            errorMessage: errMsg.slice(0, 250), fileName: req.body.fileName, fileType: req.body.fileType,
           }
         }).catch(() => {});
       }
-      // Return correct HTTP status:
-      // 504 = timeout, 400 = bad API key, 503 = no providers configured, 500 = other
+
       const statusCode = isTimeout ? 504 : isAuthError ? 400 : isNoProviders ? 503 : 500;
       res.status(statusCode).json({
         error: sanitizeErrorMessage(errMsg),
-        code: isTimeout ? 'GENERATION_TIMEOUT' : isAuthError ? 'INVALID_API_KEY' : isNoProviders ? 'NO_PROVIDER_CONFIGURED' : 'GENERATION_FAILED'
+        code: isTimeout ? 'GENERATION_TIMEOUT' : isAuthError ? 'INVALID_API_KEY' : isNoProviders ? 'NO_PROVIDER_CONFIGURED' : errorCode,
+        trace
       });
       return;
     }

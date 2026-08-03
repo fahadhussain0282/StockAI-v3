@@ -16,6 +16,7 @@ export interface UploadedFile {
   progressMessage?: string;
   metadata?: MetadataResult;
   error?: string;
+  trace?: any[];
 }
 
 export type MarketplaceId = 'general' | 'adobe-stock' | 'shutterstock' | 'freepik' | 'vecteezy' | 'pond5' | 'getty' | 'dreamstime';

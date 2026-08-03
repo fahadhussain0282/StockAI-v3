@@ -13,6 +13,7 @@ import { ZoomModal } from './components/ZoomModal';
 import { AdminPanel } from './components/AdminPanel';
 import { AuthModal } from './components/AuthModal';
 import { LockedExperienceModal } from './components/LockedExperienceModal';
+import { DiagnosticTraceModal } from './components/DiagnosticTraceModal';
 
 import { 
   UploadedFile, 
@@ -191,7 +192,7 @@ export default function App() {
   const [isPricingOpen, setIsPricingOpen] = useState(false);
   const [isApiKeysOpen, setIsApiKeysOpen] = useState(false);
   const [zoomModal, setZoomModal] = useState({ isOpen: false, url: '', title: '' });
-
+  const [traceModal, setTraceModal] = useState<{ isOpen: boolean; trace: any[]; fileName: string }>({ isOpen: false, trace: [], fileName: '' });
 
   // Theme System: Light / Dark / System
   const [theme, setThemeState] = useState<'dark' | 'light' | 'system'>(() => {
@@ -508,11 +509,16 @@ export default function App() {
           }
 
           let errMsg = `Server error (${res.status})`;
+          let errTrace: any[] | undefined = undefined;
           try {
             const errJson = await res.json();
             errMsg = errJson?.error || errJson?.message || errMsg;
+            errTrace = errJson?.trace;
           } catch {}
-          throw new Error(errMsg);
+          
+          const errorObj = new Error(errMsg);
+          if (errTrace) (errorObj as any).trace = errTrace;
+          throw errorObj;
         }
 
         let metadata: MetadataResult;
@@ -540,6 +546,7 @@ export default function App() {
         clearTimeout(timeoutId);
 
         let errorMessage = 'Generation failed. Please try again.';
+        let errTrace = err?.trace;
         if (err?.name === 'AbortError') {
           errorMessage = 'Request timed out after 60 seconds. The server is busy — please try again.';
         } else if (err?.message) {
@@ -551,7 +558,7 @@ export default function App() {
         // GUARANTEED terminal state — file will NEVER remain stuck in "generating"
         setFiles(prev =>
           prev.map(f => f.id === file.id
-            ? { ...f, status: 'error', error: errorMessage }
+            ? { ...f, status: 'error', error: errorMessage, trace: errTrace }
             : f)
         );
       }
@@ -860,7 +867,11 @@ export default function App() {
                       isGenerating={isGenerating}
                       onOpenPricing={() => setIsPricingOpen(true)}
                       onOpenApiKeys={() => setIsApiKeysOpen(true)}
-      hasCreditsOrKey={subscription.isActive && !subscription.isExpired || currentUser?.role === 'admin'}
+                      hasCreditsOrKey={subscription.isActive && !subscription.isExpired || currentUser?.role === 'admin'}
+                      onViewTrace={(trace) => {
+                        const f = files.find(f => f.trace === trace);
+                        setTraceModal({ isOpen: true, trace, fileName: f?.name || '' });
+                      }}
                     />
 
                     <ResultsWorkspace
@@ -969,6 +980,13 @@ export default function App() {
           setIsPricingOpen(true);
         }}
         onLogout={handleLogout}
+      />
+
+      <DiagnosticTraceModal
+        isOpen={traceModal.isOpen}
+        onClose={() => setTraceModal({ ...traceModal, isOpen: false })}
+        trace={traceModal.trace}
+        fileName={traceModal.fileName}
       />
     </div>
   );
