@@ -1,1 +1,0 @@
-export var getIconPrompt = function () { return "\nICON OPTIMIZATION: If the asset is an icon, implement icon-specific optimization. Support and include terminology such as \"UI\", \"UX\", \"App\", \"Dashboard\", \"Navigation\", \"Button\", \"Interface\", \"Software\", \"Mobile\", \"System\", \"Web\", \"Symbol\", or \"Sign\".\n"; };
