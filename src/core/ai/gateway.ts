@@ -37,6 +37,16 @@ export class Gateway {
     const requestStart = Date.now();
     const isVision = !!(options.base64Image && options.base64Image.length > 0);
 
+    // ── VERBOSE GATEWAY LOGGING ───────────────────────────────────────────────
+    console.log(`\n╔══════════════════════════════════════════════════════════════`);
+    console.log(`║ [AI Gateway] NEW REQUEST`);
+    console.log(`║  Authenticated User ID : ${options.userId || 'anonymous'}`);
+    console.log(`║  Requested Provider    : ${options.provider || '(auto-select)'}`);
+    console.log(`║  Requested Model       : ${options.model || '(auto-select)'}`);
+    console.log(`║  Has Image             : ${isVision}`);
+    console.log(`║  Custom API Key Passed : ${!!(options.customApiKey && options.customApiKey.trim().length > 0)}`);
+    console.log(`╚══════════════════════════════════════════════════════════════\n`);
+
     // Build the ordered provider chain (primary first, then fallbacks)
     const primaryProvider = (options.provider && options.provider.trim().length > 0)
       ? options.provider
@@ -119,11 +129,13 @@ export class Gateway {
 
       // ── Build API Key Iterator for this provider ───────────────────────────
       // CRITICAL: Check pool keys FIRST, then fall back to ENV.
-      let keyIterator: Array<{ id: string; key: string; label: string; type: 'user' | 'admin' | 'custom' | 'env' }>;
+      // FIX: Always initialize keyIterator to empty array to avoid TS uninitialized error.
+      let keyIterator: Array<{ id: string; key: string; label: string; type: 'user' | 'admin' | 'custom' | 'env' }> = [];
 
       if (options.customApiKey && options.customApiKey.trim().length > 0) {
         // Single custom key — explicit user-provided key, treated as pool of 1
         keyIterator = [{ id: 'custom', key: options.customApiKey.trim(), label: 'custom-key', type: 'custom' }];
+        console.log(`[AI Gateway]   Key Source: CUSTOM (inline key passed directly)`);
       } else if (options.userId && isDbAvailable()) {
         try {
           const db = getDb();
@@ -135,34 +147,40 @@ export class Gateway {
             // Apply simple random load balancing for now
             keyIterator = userKeys
               .sort(() => Math.random() - 0.5)
-              .map(k => ({ id: k.id, key: decryptKey(k.encryptedKey), label: k.label, type: 'user' }));
+              .map(k => {
+                const decrypted = decryptKey(k.encryptedKey);
+                console.log(`[AI Gateway]   Key Source: USER POOL — ID=${k.id} Label="${k.label}" Decrypted=${decrypted ? 'OK (len=' + decrypted.length + ')' : 'EMPTY/FAILED'}`);
+                return { id: k.id, key: decrypted, label: k.label, type: 'user' as const };
+              });
           } else {
-            console.log(`[AI Gateway] No User API keys found for ${providerId}, falling back to admin pool`);
+            console.log(`[AI Gateway]   Key Source: USER POOL is empty for provider "${providerId}" — falling back to admin pool`);
             keyIterator = [];
           }
         } catch (err) {
           console.warn('[AI Gateway] Failed to fetch user keys, falling back to admin pool', err);
           keyIterator = [];
         }
-      } 
+      }
       
-      if (!keyIterator || keyIterator.length === 0) {
+      if (keyIterator.length === 0) {
         // Fallback to enterprise key pool (Admin keys)
         const poolKeys = ApiKeyManager.getKeyIterator(providerId);
         if (poolKeys.length > 0) {
           // Use pool keys — all simultaneously active, ordered by health score
-          keyIterator = poolKeys.map(k => ({ id: k.id, key: k.key, label: k.label, type: 'admin' }));
+          keyIterator = poolKeys.map(k => ({ id: k.id, key: k.key, label: k.label, type: 'admin' as const }));
+          console.log(`[AI Gateway]   Key Source: ADMIN POOL (${poolKeys.length} key(s))`);
         } else if (providerImpl.isEnabled()) {
           // No pool keys, but ENV key exists — use it as implicit pool of 1
-          keyIterator = [{ id: 'env', key: '', label: 'env-key', type: 'env' }];
+          keyIterator = [{ id: 'env', key: '', label: 'env-key', type: 'env' as const }];
+          console.log(`[AI Gateway]   Key Source: ENV variable (no pool keys)`);
         } else {
           // No pool keys and no ENV key — skip this provider
-          console.warn(`[AI Gateway] Skipping ${providerId} — no API keys in pool and no ENV key`);
+          console.warn(`[AI Gateway] ✗ Skipping "${providerId}" — no API keys in pool, no ENV key, and no user keys`);
           continue;
         }
       }
 
-      console.log(`[AI Gateway] Provider "${providerId}" — ${keyIterator.length} key(s) to try, model: ${targetModel}, vision: ${isVision}`);
+      console.log(`[AI Gateway] ▶ Attempting provider "${providerId}" with ${keyIterator.length} key(s), model: ${targetModel}, vision: ${isVision}`);
 
       // ── Per-Key Failover Loop ──────────────────────────────────────────────
       for (const { id: keyId, key: keyValue, label: keyLabel, type: keyType } of keyIterator) {
@@ -174,12 +192,15 @@ export class Gateway {
         const mimeTypeToPass = isVision ? (options.mimeType || 'image/jpeg') : undefined;
 
         try {
+          console.log(`[AI Gateway]   → Trying key "${keyLabel}" (${keyType}) on provider "${providerId}" model="${targetModel}"`);
           const response = await Promise.race([
             providerImpl.generateVisionAnalysis({
               ...options,
               model: targetModel,
               provider: providerId,
-              customApiKey: keyValue || undefined,
+              // CRITICAL FIX: Only pass key if it has actual content (non-empty string)
+              // Empty string falls back to ENV inside the provider which may also be empty
+              customApiKey: (keyValue && keyValue.trim().length > 0) ? keyValue.trim() : undefined,
               mimeType: mimeTypeToPass
             }),
             new Promise<never>((_, reject) =>
@@ -189,6 +210,7 @@ export class Gateway {
 
           // ── KEY SUCCESS ────────────────────────────────────────────────────
           const keyLatency = Date.now() - keyStart;
+          console.log(`[AI Gateway]   ✓ SUCCESS key "${keyLabel}" on "${providerId}" — ${keyLatency}ms`);
           if (keyType === 'user') {
             try {
               getDb()!.userApiKey.update({
@@ -236,7 +258,8 @@ export class Gateway {
           lastErrorMsg = ApiKeyManager.sanitizeKeyFromMessage(errMsg);
           totalRetries++;
 
-          console.warn(`[AI Gateway] Key "${keyLabel}" on ${providerId} failed: ${lastErrorMsg.substring(0, 200)}`);
+          console.warn(`[AI Gateway]   ✗ FAILED key "${keyLabel}" on "${providerId}": ${lastErrorMsg.substring(0, 300)}`);
+          console.warn(`[AI Gateway]     Full error type: ${errMsg.includes('AUTH_ERROR') ? 'AUTH_ERROR' : errMsg.includes('RATE_LIMIT') ? 'RATE_LIMIT' : errMsg.includes('QUOTA_EXHAUSTED') ? 'QUOTA_EXHAUSTED' : errMsg.includes('TIMEOUT') ? 'TIMEOUT' : 'TRANSIENT/UNKNOWN'}`);
 
           // ── Classify the error for this key ───────────────────────────────
           if (errMsg.includes('TIMEOUT') || RetryService.isTimeout(errMsg)) {

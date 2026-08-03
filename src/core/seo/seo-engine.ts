@@ -194,10 +194,16 @@ Return output strictly in valid JSON format matching:
     } catch (err: any) {
       const errMsg: string = (err instanceof Error ? err.message : String(err)) || 'Unknown gateway error';
       const elapsed = Date.now() - startTime;
-      console.error(`[StockAI Gateway] Vision AI request failed after ${elapsed}ms: ${errMsg}`);
+      // VERBOSE: Always log full raw error to server console for diagnosis
+      console.error(`\n╔══ [SeoEngine] GATEWAY FAILURE ══════════════════════════════`);
+      console.error(`║  Time elapsed : ${elapsed}ms`);
+      console.error(`║  Provider     : ${provider}`);
+      console.error(`║  Model        : ${selectedModel || '(auto)'}`);
+      console.error(`║  Raw error    : ${errMsg}`);
+      console.error(`╚══════════════════════════════════════════════════════════════\n`);
       // Provide a user-friendly message when no API keys are configured
       if (errMsg.includes('No available API key') || errMsg.includes('No API key') || errMsg.includes('No keys')) {
-        throw new Error('No API keys configured. Please add your API key in Settings \u2192 API Keys.');
+        throw new Error('No API keys configured. Please add your API key in Settings → API Keys.');
       }
       throw new Error(`AI Gateway Error: ${errMsg}`);
     }

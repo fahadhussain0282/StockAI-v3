@@ -58,8 +58,10 @@ export class XAiProvider extends BaseAiProvider {
         { role: 'system', content: options.systemInstruction }
       ];
 
-      if (options.base64Image) {
-        const cleanBase64 = options.base64Image.replace(/^data:[^;]+;base64,/, '');
+      const hasImage = !!(options.base64Image && options.base64Image.length > 0);
+
+      if (hasImage) {
+        const cleanBase64 = options.base64Image!.replace(/^data:[^;]+;base64,/, '');
         const mime = options.mimeType || 'image/jpeg';
         messages.push({
           role: 'user',
@@ -72,6 +74,22 @@ export class XAiProvider extends BaseAiProvider {
         messages.push({ role: 'user', content: options.userPrompt });
       }
 
+      // CRITICAL FIX: xAI grok-2-vision-* does NOT support response_format: json_object
+      // when images are included in the request. This causes HTTP 400 Bad Request.
+      // For vision requests: omit response_format and parse JSON from text response.
+      // For text-only requests: use json_object mode safely.
+      const requestBody: any = {
+        model: modelToUse,
+        messages,
+        max_tokens: 4096,
+        temperature: 0.3
+      };
+      if (!hasImage) {
+        requestBody.response_format = { type: 'json_object' };
+      }
+
+      console.log(`[xAI Provider] Sending request: model=${modelToUse} hasImage=${hasImage} response_format=${!hasImage ? 'json_object' : 'OMITTED (vision)' }`);
+
       const res = await fetch(`${XAI_API_BASE}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -79,42 +97,52 @@ export class XAiProvider extends BaseAiProvider {
           'Content-Type': 'application/json',
           'User-Agent': 'stockai-gateway/3.0'
         },
-        body: JSON.stringify({
-          model: modelToUse,
-          messages,
-          response_format: { type: 'json_object' }
-        }),
+        body: JSON.stringify(requestBody),
         signal: controller.signal
       });
 
       clearTimeout(timeoutId);
 
+      // Always capture body for error logging
+      const responseBodyText = await res.text();
+      console.log(`[xAI Provider] Response: HTTP ${res.status}`);
+      if (!res.ok) {
+        console.error(`[xAI Provider] ERROR BODY:\n  Status : ${res.status}\n  Headers: content-type=${res.headers.get('content-type')}\n  Body   : ${responseBodyText.slice(0, 500)}`);
+      }
+
       if (res.status === 401 || res.status === 403) {
         throw new Error('AUTH_ERROR: xAI API key is invalid or unauthorized.');
       }
       if (res.status === 429) {
-        const errText = await res.text();
-        if (errText.toLowerCase().includes('quota') || errText.toLowerCase().includes('billing') || errText.toLowerCase().includes('exceeded')) {
+        if (responseBodyText.toLowerCase().includes('quota') || responseBodyText.toLowerCase().includes('billing') || responseBodyText.toLowerCase().includes('exceeded')) {
           throw new Error('QUOTA_EXHAUSTED: xAI quota exceeded or billing issue.');
         }
         throw new Error('RATE_LIMIT: xAI rate limit reached. Please retry shortly.');
       }
       if (!res.ok) {
-        const errStr = await res.text();
-        throw new Error(`xAI API Error: ${res.status} ${errStr.slice(0, 200)}`);
+        // Expose full provider error to logs (sanitized before client)
+        let providerError = responseBodyText.slice(0, 400);
+        try {
+          const parsed = JSON.parse(responseBodyText);
+          providerError = parsed?.error?.message || parsed?.detail || providerError;
+        } catch {}
+        throw new Error(`xAI API Error ${res.status}: ${providerError}`);
       }
 
-      const data = await res.json();
+      const data = JSON.parse(responseBodyText);
       rawStr = JSON.stringify(data, null, 2);
       const content = data.choices?.[0]?.message?.content || '{}';
 
       try {
         parsed = JSON.parse(content);
       } catch {
+        // Try extracting JSON object from the response (model may wrap in markdown)
         const jsonMatch = content.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           try { parsed = JSON.parse(jsonMatch[0]); } catch { parsed = {}; }
         } else {
+          // Also try extracting from full text in case there's no JSON braces
+          console.warn('[xAI Provider] Failed to parse response as JSON, raw content:', content.slice(0, 300));
           throw new Error('Failed to parse xAI response as JSON.');
         }
       }

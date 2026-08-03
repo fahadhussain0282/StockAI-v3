@@ -260,6 +260,16 @@ router.post('/generate-metadata', async (req: Request, res: Response) => {
     const { targetPlatform = 'general' } = req.body.settings || {};
     const marketplaceRule = MARKETPLACE_REGISTRY[targetPlatform] || MARKETPLACE_REGISTRY.general;
 
+    // ── VERBOSE REQUEST LOGGING ──────────────────────────────────────────────
+    console.log(`\n╔══ [generate-metadata] REQUEST ══════════════════════════════`);
+    console.log(`║  User ID          : ${authResult.userId} (admin=${authResult.isAdmin})`);
+    console.log(`║  Requested Provider: ${req.body.provider || '(not specified — will use google-gemini)'}`);
+    console.log(`║  Requested Model  : ${req.body.selectedModel || '(auto)'}`);
+    console.log(`║  Custom Key Sent  : ${!!(req.body.customApiKey && req.body.customApiKey.trim())}`);
+    console.log(`║  File             : ${req.body.fileName || '(unnamed)'} (${req.body.fileType || 'unknown'})`);
+    console.log(`║  Has Image Data   : ${!!(req.body.base64Data && req.body.base64Data.length > 0)}`);
+    console.log(`╚══════════════════════════════════════════════════════════════\n`);
+
     // CRITICAL FIX: 25s server-side timeout wrapper — permanently prevents stuck states
     // Server hard limit is 30s; we use 25s to give time for the response to be sent.
     const GENERATION_TIMEOUT_MS = 25000;
