@@ -11,12 +11,12 @@ export const PROVIDER_FALLBACK_ORDER = [
   'google-gemini',
   'groq',
   'openrouter',
-  'deepseek',
   'together',
+  'deepseek',
   'mistral',
   'openai',
-  'xai',
-  'anthropic'
+  'anthropic',
+  'xai'
 ];
 
 /** All supported provider IDs for validation */
