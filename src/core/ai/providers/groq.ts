@@ -104,7 +104,7 @@ export class GroqProvider extends BaseAiProvider {
         throw new Error(`Groq API Error: ${res.status} ${errStr.slice(0, 200)}`);
       }
 
-      const data = await res.json();
+      const data = (await res.json()) as any;
       rawStr = JSON.stringify(data, null, 2);
       const content = data.choices?.[0]?.message?.content || '{}';
 
@@ -157,7 +157,7 @@ export class GroqProvider extends BaseAiProvider {
       });
       clearTimeout(timeoutId);
       if (res.ok) {
-        const data = await res.json();
+        const data = (await res.json()) as any;
         const modelCount = data?.data?.length || 0;
         const modelIds = (data?.data || []).slice(0, 10).map((m: any) => m.id);
         return { valid: true, message: `Groq Connected — ${modelCount} models available`, models: modelIds };

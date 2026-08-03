@@ -105,7 +105,7 @@ export class DeepSeekProvider extends BaseAiProvider {
         throw new Error(`DeepSeek API Error ${res.status}: ${errStr.slice(0, 300)}`);
       }
 
-      const data = await res.json();
+      const data = (await res.json()) as any;
       const rawStr = JSON.stringify(data, null, 2);
       const content = data.choices?.[0]?.message?.content || '{}';
 
@@ -163,7 +163,7 @@ export class DeepSeekProvider extends BaseAiProvider {
       });
       clearTimeout(timeoutId);
       if (res.ok) {
-        const data = await res.json();
+        const data = (await res.json()) as any;
         const modelIds = (data.data || []).map((m: any) => m.id).slice(0, 10);
         return { valid: true, message: `DeepSeek AI Connected — ${modelIds.length} models available`, models: modelIds };
       }

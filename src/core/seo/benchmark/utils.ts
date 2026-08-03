@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { BenchmarkReport } from './types';
 
-const __filename = fileURLToPath(import.meta.url);
+const __filename = fileURLToPath(({ url: "" }).url);
 const __dirname = path.dirname(__filename);
 
 export function calculateGrade(score: number): string {

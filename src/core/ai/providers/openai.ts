@@ -113,7 +113,7 @@ export class OpenAiProvider extends BaseAiProvider {
         throw new Error(`OpenAI API Error ${res.status}: ${errStr.slice(0, 300)}`);
       }
 
-      const data = await res.json();
+      const data = (await res.json()) as any;
       const rawStr = JSON.stringify(data, null, 2);
       const content = data.choices?.[0]?.message?.content || '{}';
 
@@ -172,7 +172,7 @@ export class OpenAiProvider extends BaseAiProvider {
       });
       clearTimeout(timeoutId);
       if (res.ok) {
-        const data = await res.json();
+        const data = (await res.json()) as any;
         const gptModels = (data.data || [])
           .filter((m: any) => m.id.startsWith('gpt-') || m.id.startsWith('o4'))
           .map((m: any) => m.id)

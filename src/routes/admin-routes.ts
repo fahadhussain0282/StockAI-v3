@@ -1389,7 +1389,7 @@ router.post('/key-pool/key/:keyId/test', async (req: Request, res: Response) => 
     } else if (provId === 'openai') {
       const r = await fetch('https://api.openai.com/v1/models', { headers: { Authorization: `Bearer ${rawKey}` } });
       testOk = r.ok;
-      const modelCount = testOk ? ((await r.json())?.data?.length || '?') : 0;
+      const modelCount = testOk ? (((await r.json()) as any)?.data?.length || '?') : 0;
       message = testOk ? `OpenAI OK — ${modelCount} models available` : `OpenAI failed — HTTP ${r.status}`;
     } else if (provId === 'anthropic') {
       const r = await fetch('https://api.anthropic.com/v1/messages', {
@@ -1402,7 +1402,7 @@ router.post('/key-pool/key/:keyId/test', async (req: Request, res: Response) => 
     } else if (provId === 'groq') {
       const r = await fetch('https://api.groq.com/openai/v1/models', { headers: { Authorization: `Bearer ${rawKey}` } });
       testOk = r.ok;
-      const modelCount = testOk ? ((await r.json())?.data?.length || '?') : 0;
+      const modelCount = testOk ? (((await r.json()) as any)?.data?.length || '?') : 0;
       message = testOk ? `Groq OK — ${modelCount} models available` : `Groq failed — HTTP ${r.status}`;
     } else if (provId === 'xai') {
       const r = await fetch('https://api.x.ai/v1/models', { headers: { Authorization: `Bearer ${rawKey}` } });
@@ -1415,17 +1415,17 @@ router.post('/key-pool/key/:keyId/test', async (req: Request, res: Response) => 
     } else if (provId === 'mistral') {
       const r = await fetch('https://api.mistral.ai/v1/models', { headers: { Authorization: `Bearer ${rawKey}` } });
       testOk = r.ok;
-      const modelCount = testOk ? ((await r.json())?.data?.length || '?') : 0;
+      const modelCount = testOk ? (((await r.json()) as any)?.data?.length || '?') : 0;
       message = testOk ? `Mistral AI OK — ${modelCount} models available` : `Mistral failed — HTTP ${r.status}`;
     } else if (provId === 'deepseek') {
       const r = await fetch('https://api.deepseek.com/v1/models', { headers: { Authorization: `Bearer ${rawKey}` } });
       testOk = r.ok;
-      const modelCount = testOk ? ((await r.json())?.data?.length || '?') : 0;
+      const modelCount = testOk ? (((await r.json()) as any)?.data?.length || '?') : 0;
       message = testOk ? `DeepSeek AI OK — ${modelCount} models available` : `DeepSeek failed — HTTP ${r.status}`;
     } else if (provId === 'together') {
       const r = await fetch('https://api.together.xyz/v1/models', { headers: { Authorization: `Bearer ${rawKey}` } });
       testOk = r.ok;
-      const models = testOk ? (await r.json()) : [];
+      const models = testOk ? (await r.json() as any) : [];
       const modelCount = Array.isArray(models) ? models.length : 0;
       message = testOk ? `Together AI OK — ${modelCount}+ models available` : `Together AI failed — HTTP ${r.status}`;
     } else {

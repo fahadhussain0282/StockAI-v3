@@ -121,7 +121,7 @@ export class AnthropicProvider extends BaseAiProvider {
         throw new Error(`Anthropic API Error ${res.status}: ${errStr.slice(0, 300)}`);
       }
 
-      const data = await res.json();
+      const data = (await res.json()) as any;
       const rawStr = JSON.stringify(data, null, 2);
 
       // Claude returns content as an array of blocks

@@ -116,7 +116,7 @@ export class TogetherProvider extends BaseAiProvider {
         throw new Error(`Together AI API Error ${res.status}: ${errStr.slice(0, 300)}`);
       }
 
-      const data = await res.json();
+      const data = (await res.json()) as any;
       const rawStr = JSON.stringify(data, null, 2);
       const content = data.choices?.[0]?.message?.content || '{}';
 
@@ -174,7 +174,7 @@ export class TogetherProvider extends BaseAiProvider {
       });
       clearTimeout(timeoutId);
       if (res.ok) {
-        const data = await res.json();
+        const data = (await res.json()) as any;
         const modelIds = Array.isArray(data) ? data.map((m: any) => m.id).slice(0, 10) : [];
         return { valid: true, message: `Together AI Connected — ${modelIds.length}+ models available`, models: modelIds };
       }

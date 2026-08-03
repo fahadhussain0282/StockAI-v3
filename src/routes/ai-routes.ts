@@ -85,7 +85,7 @@ router.post('/test-key', AuthMiddleware.authenticate, async (req: Request, res: 
           headers: { Authorization: `Bearer ${keyToUse}` }
         });
         if (testRes.ok) {
-          const data = await testRes.json();
+          const data = (await testRes.json()) as any;
           const modelCount = data?.data?.length || 0;
           return res.json({ status: 'ok', provider: 'groq', message: `Groq API Connected — ${modelCount} models available` });
         }
@@ -103,7 +103,7 @@ router.post('/test-key', AuthMiddleware.authenticate, async (req: Request, res: 
           headers: { Authorization: `Bearer ${keyToUse}` }
         });
         if (testRes.ok) {
-          const data = await testRes.json();
+          const data = (await testRes.json()) as any;
           const gptModels = (data.data || []).filter((m: any) => m.id.startsWith('gpt-') || m.id.startsWith('o4')).length;
           return res.json({ status: 'ok', provider: 'openai', message: `OpenAI API Connected — ${gptModels} GPT models available` });
         }

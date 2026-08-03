@@ -148,7 +148,7 @@ export class OpenRouterProvider extends BaseAiProvider {
         throw new Error(`OpenRouter API Error ${res.status}: ${errStr.slice(0, 300)}`);
       }
 
-      const data = await res.json();
+      const data = (await res.json()) as any;
       const rawStr = JSON.stringify(data, null, 2);
       const content = data.choices?.[0]?.message?.content || '{}';
 
@@ -224,7 +224,7 @@ export class OpenRouterProvider extends BaseAiProvider {
       });
       clearTimeout(timeoutId);
       if (res.ok) {
-        const data = await res.json();
+        const data = (await res.json()) as any;
         const modelCount = data?.data?.length || 0;
         const freeModels = (data?.data || [])
           .filter((m: any) => m.id.includes(':free'))
