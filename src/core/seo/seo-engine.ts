@@ -147,7 +147,7 @@ Return output strictly in valid JSON format matching:
     let normalizedResponse;
 
     try {
-      normalizedResponse = await AiGateway.generateVisionAnalysis({
+      normalizedResponse = await AiGateway.generateMetadata({
         provider,
         model: selectedModel,
         systemInstruction,
@@ -366,7 +366,7 @@ Visual Style: ${cleanStyle}
 Mood/Atmosphere: ${cleanMood}
 Target: High-quality commercial microstock asset`;
 
-      const response = await AiGateway.generateVisionAnalysis({
+      const response = await AiGateway.generateMetadata({
         provider: (options as any).provider || 'google-gemini',
         model: undefined,
         systemInstruction,
