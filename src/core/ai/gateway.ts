@@ -94,15 +94,21 @@ export class Gateway {
       if (options.customApiKey && options.customApiKey.trim().length > 0) {
         keyIterator = [{ id: 'custom', key: options.customApiKey.trim(), label: 'custom-key', type: 'custom' }];
       } else if (options.userId && isDbAvailable()) {
-        try {
-          const db = getDb();
-          const userKeys = await db!.userApiKey.findMany({ where: { userId: options.userId, provider: providerId, isEnabled: true } });
-          if (userKeys.length > 0) {
-            keyIterator = userKeys.sort(() => Math.random() - 0.5).map(k => ({
-              id: k.id, key: decryptKey(k.encryptedKey) || '', label: k.label, type: 'user' as const
-            }));
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          try {
+            const db = getDb();
+            const userKeys = await db!.userApiKey.findMany({ where: { userId: options.userId, provider: providerId, isEnabled: true } });
+            if (userKeys.length > 0) {
+              keyIterator = userKeys.sort(() => Math.random() - 0.5).map(k => ({
+                id: k.id, key: decryptKey(k.encryptedKey) || '', label: k.label, type: 'user' as const
+              }));
+            }
+            break; // Success, exit retry loop
+          } catch (err: any) {
+            console.error(`[gateway] Attempt ${attempt} failed to fetch user keys:`, err?.message || err);
+            if (attempt === 1) await new Promise(r => setTimeout(r, 200)); // wait and retry
           }
-        } catch (err) {}
+        }
       }
       
       if (keyIterator.length === 0) {

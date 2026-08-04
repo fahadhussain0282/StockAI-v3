@@ -88,7 +88,13 @@ export class SessionService {
 
     // ── STEP 2: Check DB for revocation (if DB available) ─────────────────────
     if (isDbAvailable()) {
-      const session = await userStore.findSessionByToken(token);
+      let session = await userStore.findSessionByToken(token);
+      if (!session) {
+        // Retry once in case of cold start DB connection drop
+        await new Promise(r => setTimeout(r, 200));
+        session = await userStore.findSessionByToken(token);
+      }
+      
       if (!session) {
         // Session not in DB — could be a fresh JWT issued before DB was available,
         // OR this token was issued by a different instance before the DB migration.

@@ -238,6 +238,40 @@ router.get('/marketplaces', (req: Request, res: Response) => {
   res.json(MARKETPLACE_REGISTRY);
 });
 
+// ─── Debug ───────────────────────────────────────────────────────────────
+router.get('/debug-keys', async (req: Request, res: Response) => {
+  try {
+    const authResult = await validateAuthAndSubscription(req, res);
+    if (!authResult) return;
+
+    if (!isDbAvailable()) {
+      res.json({ error: 'DB not available' });
+      return;
+    }
+
+    const db = getDb();
+    const provider = req.query.provider || 'openai';
+    const keys = await db!.userApiKey.findMany({ 
+      where: { userId: authResult.userId, provider: provider as string } 
+    });
+
+    res.json({
+      userId: authResult.userId,
+      providerRequested: provider,
+      dbAvailable: true,
+      keysFound: keys.length,
+      keys: keys.map(k => ({
+        id: k.id,
+        provider: k.provider,
+        isEnabled: k.isEnabled,
+        hasKey: !!k.encryptedKey
+      }))
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message, stack: err.stack });
+  }
+});
+
 // ─── Main AI Vision + Metadata Generation (PROTECTED) ────────────────────────
 router.post('/generate-metadata', async (req: Request, res: Response) => {
   const routeStart = Date.now();
