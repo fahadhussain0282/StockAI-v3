@@ -51,7 +51,15 @@ export default async function handler(req: Request, res: Response): Promise<void
 
   // Delegate to the Express app
   return new Promise((resolve) => {
-    app(req, res, () => resolve());
+    app(req, res, (err: any) => {
+      if (err) {
+        console.error('[Vercel Handler] Unhandled Express Error:', err);
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Internal Server Error (Vercel Handler)' });
+        }
+      }
+      resolve();
+    });
     res.on('finish', resolve);
     res.on('close', resolve);
   });

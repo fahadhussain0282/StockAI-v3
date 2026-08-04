@@ -3,10 +3,10 @@ import path from 'path';
 import dotenv from 'dotenv';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import { authRouter } from './src/core/auth';
-import { userRouter } from './src/core/users';
-import { teamRouter } from './src/core/teams';
-import { billingRouter } from './src/core/billing';
+import { authRouter } from './src/core/auth/index';
+import { userRouter } from './src/core/users/index';
+import { teamRouter } from './src/core/teams/index';
+import { billingRouter } from './src/core/billing/index';
 import { adminRouter, systemSettingsStore } from './src/routes/admin-routes';
 import { aiRouter } from './src/routes/ai-routes';
 import apiKeysRouter from './src/routes/api-keys-routes';
@@ -285,6 +285,11 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
       code: 'INTERNAL_ERROR'
     });
   }
+});
+
+// ─── Catch-all for API Routes (prevents 504 timeouts on Vercel) ───────────
+app.use('/api', (req: Request, res: Response) => {
+  res.status(404).json({ error: 'API route not found.' });
 });
 
 // Vite Middleware for development vs Static serving for production

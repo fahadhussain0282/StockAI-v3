@@ -19,13 +19,11 @@ async function test() {
     selectedModel: "gpt-4o"
   };
 
-  const res = await fetch('https://stockai-v3-one.vercel.app/api/generate-metadata', {
-    method: 'POST',
+  const res = await fetch('https://stockai-v3-one.vercel.app/api/admin/fooooobar', {
+    method: 'GET',
     headers: {
       'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(payload)
+    }
   });
 
   console.log('Status:', res.status);
