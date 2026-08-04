@@ -12,8 +12,8 @@ import { AiModelDefinition } from '../types';
 export const GROQ_MODELS: AiModelDefinition[] = [
   // ─── Vision Models (Free Tier) ────────────────────────────────────────────
   {
-    id: 'llama-3.2-11b-vision-preview',
-    name: 'Llama 3.2 11B Vision',
+    id: 'llama-3.2-90b-vision-preview',
+    name: 'Llama 3.2 90B Vision',
     capabilities: { vision: true, streaming: true, json: true },
     contextWindow: 8192,
     maxOutputTokens: 8192,
@@ -92,7 +92,7 @@ export const GROQ_MODELS: AiModelDefinition[] = [
  */
 export const GROQ_VISION_FALLBACK_CHAIN = [
   'meta-llama/llama-4-maverick-17b-128e-instruct',
-  'llama-3.2-11b-vision-preview'
+  'llama-3.2-90b-vision-preview'
 ];
 
 /** Default text fallback when no vision is needed */
@@ -102,5 +102,5 @@ export const GROQ_TEXT_FALLBACK_CHAIN = [
   'llama3-70b-8192'
 ];
 
-export const GROQ_DEFAULT_VISION_MODEL = 'meta-llama/llama-4-maverick-17b-128e-instruct';
+export const GROQ_DEFAULT_VISION_MODEL = 'llama-3.2-90b-vision-preview';
 export const GROQ_DEFAULT_TEXT_MODEL = 'llama-3.3-70b-versatile';

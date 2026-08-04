@@ -11,8 +11,8 @@ export const OPENROUTER_APP_NAME = 'StockAI';
  */
 export const OPENROUTER_MODELS: AiModelDefinition[] = [
   {
-    id: 'google/gemini-2.0-flash-exp:free',
-    name: 'Gemini 2.0 Flash (Free)',
+    id: 'google/gemma-4-31b-it:free',
+    name: 'Gemma 4 31B (Free)',
     capabilities: { vision: true, streaming: true, json: true },
     contextWindow: 1048576,
     maxOutputTokens: 8192,
@@ -102,11 +102,12 @@ export const OPENROUTER_MODELS: AiModelDefinition[] = [
   }
 ];
 
-export const OPENROUTER_DEFAULT_VISION_MODEL = 'google/gemini-2.0-flash-exp:free';
-export const OPENROUTER_DEFAULT_TEXT_MODEL = 'google/gemini-2.0-flash-exp:free';
+export const OPENROUTER_DEFAULT_VISION_MODEL = 'google/gemma-4-31b-it:free';
+export const OPENROUTER_DEFAULT_TEXT_MODEL = 'google/gemma-4-31b-it:free';
 
 export const OPENROUTER_VISION_FALLBACK_CHAIN = [
-  'google/gemini-2.0-flash-exp:free',
+  'google/gemma-4-31b-it:free',
+  'google/gemini-flash-1.5',
   'meta-llama/llama-4-maverick:free',
   'qwen/qwen2.5-vl-72b-instruct:free',
   'google/gemini-flash-1.5',

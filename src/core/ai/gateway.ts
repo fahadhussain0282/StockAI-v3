@@ -7,6 +7,7 @@ import { PROVIDER_FALLBACK_ORDER, buildProviderChain } from './fallback-chain';
 import { BaseAiProvider } from './providers/base-provider';
 import { CircuitBreakerService } from './circuit-breaker';
 import { ApiKeyManager, decryptKey } from './api-key-manager';
+import { JSONRepair } from './json-repair.js';
 import { getDb, isDbAvailable } from '../db/client';
 
 export interface DiagnosticTraceEntry {
@@ -156,6 +157,11 @@ export class Gateway {
           AiHealth.recordSuccess(providerId, targetModel, response.latency);
 
           trace.push({ provider: providerId, model: targetModel, keyType, keyLabel, status: 'SUCCESS', message: 'OK', latencyMs: keyLatency });
+
+          if (response.rawResponse) {
+            response.parsedResponse = JSONRepair.parse(response.rawResponse, response.parsedResponse);
+          }
+          response.parsedResponse = JSONRepair.normalizeMetadata(response.parsedResponse);
 
           return { ...response, fallbackTriggered: providerId !== primaryProvider, retries: totalRetries };
 
