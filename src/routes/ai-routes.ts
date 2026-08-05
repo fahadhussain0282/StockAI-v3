@@ -339,8 +339,14 @@ router.post('/generate-metadata', async (req: Request, res: Response) => {
       console.error('[generate-metadata] Generation error:', errMsg);
       const isTimeout = errMsg.includes('GENERATION_TIMEOUT') || errMsg.includes('timed out');
       const isAuthError = errMsg.includes('AUTH_ERROR') || errMsg.includes('API_KEY_INVALID') || errMsg.includes('invalid key') || errMsg.includes('Invalid API Key');
-      const isNoProviders = errMsg.includes('No API keys') || errMsg.includes('No available') || errMsg.includes('All configured providers');
+      const isNoProviders = errorCode === 'NO_FREE_PROVIDER_CONFIGURED' || errMsg.includes('No API keys') || errMsg.includes('No available') || errMsg.includes('All configured providers') || errMsg.includes('No active FREE AI provider found');
       const elapsed = Date.now() - routeStart;
+      if (process.env.NODE_ENV !== 'production' || process.env.DEBUG === 'true') {
+        console.error(`[Request ID: ${requestId}] Success: false, Provider: unknown, Latency: ${elapsed}ms, Error: ${errMsg.slice(0, 100)}`);
+        console.error(`[Request ID: ${requestId}] Fallback Path Trace:`, JSON.stringify(trace, null, 2));
+      } else {
+        console.error(`[Request ID: ${requestId}] Generation failed after ${elapsed}ms: ${errMsg.slice(0, 100)}`);
+      }
 
       if (isDbAvailable()) {
         getDb()!.telemetryLog.create({
@@ -356,13 +362,22 @@ router.post('/generate-metadata', async (req: Request, res: Response) => {
       const statusCode = isTimeout ? 504 : isAuthError ? 400 : isNoProviders ? 503 : 500;
       res.status(statusCode).json({
         error: sanitizeErrorMessage(errMsg),
-        code: isTimeout ? 'GENERATION_TIMEOUT' : isAuthError ? 'INVALID_API_KEY' : isNoProviders ? 'NO_PROVIDER_CONFIGURED' : errorCode,
+        code: isTimeout ? 'GENERATION_TIMEOUT' : isAuthError ? 'INVALID_API_KEY' : isNoProviders ? 'NO_FREE_PROVIDER_CONFIGURED' : errorCode,
         trace
       });
       return;
     }
 
     const elapsed = Date.now() - routeStart;
+    
+    // Console log the trace if in DEBUG mode
+    if (process.env.NODE_ENV !== 'production' || process.env.DEBUG === 'true') {
+      console.log(`[Request ID: ${requestId}] Success: true, Provider: ${metadataResult?.provider}, Model: ${metadataResult?.model}, KeySource: ${(metadataResult as any)?.keySource}, Latency: ${elapsed}ms`);
+      console.log(`[Request ID: ${requestId}] Fallback Path Trace:`, JSON.stringify((metadataResult as any)?.trace, null, 2));
+    } else {
+      console.log(`[Request ID: ${requestId}] Metadata generated in ${elapsed}ms via ${metadataResult?.provider}`);
+    }
+
     // Log telemetry success to DB (non-blocking)
     if (isDbAvailable()) {
       getDb()!.telemetryLog.create({
@@ -375,6 +390,8 @@ router.post('/generate-metadata', async (req: Request, res: Response) => {
           success: true,
           fileName: req.body.fileName,
           fileType: req.body.fileType,
+          retries: (metadataResult as any)?.retries || 0,
+          fallbacks: (metadataResult as any)?.fallbackTriggered ? 1 : 0
         }
       }).catch(() => {});
     }

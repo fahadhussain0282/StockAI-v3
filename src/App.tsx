@@ -14,6 +14,7 @@ import { AdminPanel } from './components/AdminPanel';
 import { AuthModal } from './components/AuthModal';
 import { LockedExperienceModal } from './components/LockedExperienceModal';
 import { DiagnosticTraceModal } from './components/DiagnosticTraceModal';
+import { ApiKeyWizard } from './components/ApiKeyWizard';
 
 import { 
   UploadedFile, 
@@ -48,6 +49,7 @@ export default function App() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [authInitError, setAuthInitError] = useState<string | null>(null);
   const [authToken, setAuthToken] = useState<string>(() => localStorage.getItem('stockai_auth_token') || '');
+  const [isApiKeyWizardOpen, setIsApiKeyWizardOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isLockedExperienceOpen, setIsLockedExperienceOpen] = useState(false);
 
@@ -509,13 +511,22 @@ export default function App() {
           }
 
           let errMsg = `Server error (${res.status})`;
+          let errCode = '';
           let errTrace: any[] | undefined = undefined;
           try {
             const errJson = await res.json();
             errMsg = errJson?.error || errJson?.message || errMsg;
+            errCode = errJson?.code || '';
             errTrace = errJson?.trace;
           } catch {}
           
+          if (errCode === 'NO_FREE_PROVIDER_CONFIGURED') {
+            setIsApiKeyWizardOpen(true);
+            // Revert file to pending so it can resume
+            setFiles(prev => prev.map(f => f.id === file.id ? { ...f, status: 'pending' } : f));
+            break;
+          }
+
           const errorObj = new Error(errMsg);
           if (errTrace) (errorObj as any).trace = errTrace;
           throw errorObj;
@@ -987,6 +998,16 @@ export default function App() {
         onClose={() => setTraceModal({ ...traceModal, isOpen: false })}
         trace={traceModal.trace}
         fileName={traceModal.fileName}
+      />
+
+      <ApiKeyWizard
+        isOpen={isApiKeyWizardOpen}
+        onClose={() => setIsApiKeyWizardOpen(false)}
+        authToken={authToken}
+        onSuccess={() => {
+          setIsApiKeyWizardOpen(false);
+          handleGenerateAll();
+        }}
       />
     </div>
   );

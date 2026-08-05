@@ -18,71 +18,95 @@ function maskKey(key: string): string {
 async function testKey(provider: string, apiKey: string): Promise<{ ok: boolean; error?: string }> {
   try {
     let url = '';
-    let headers: Record<string, string> = { Authorization: `Bearer ${apiKey}` };
-    let method = 'GET';
+    let headers: Record<string, string> = { 
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    };
+    let method = 'POST';
     let body: string | undefined = undefined;
+
+    const tinyPrompt = "Reply with 1";
 
     switch (provider) {
       case 'openai':
-        url = 'https://api.openai.com/v1/models';
+        url = 'https://api.openai.com/v1/chat/completions';
+        body = JSON.stringify({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: tinyPrompt }], max_tokens: 5 });
         break;
       case 'mistral':
-        url = 'https://api.mistral.ai/v1/models';
+        url = 'https://api.mistral.ai/v1/chat/completions';
+        body = JSON.stringify({ model: 'mistral-tiny', messages: [{ role: 'user', content: tinyPrompt }], max_tokens: 5 });
         break;
       case 'deepseek':
-        url = 'https://api.deepseek.com/models';
+        url = 'https://api.deepseek.com/chat/completions';
+        body = JSON.stringify({ model: 'deepseek-chat', messages: [{ role: 'user', content: tinyPrompt }], max_tokens: 5 });
         break;
       case 'together':
-        url = 'https://api.together.xyz/v1/models';
+        url = 'https://api.together.xyz/v1/chat/completions';
+        body = JSON.stringify({ model: 'meta-llama/Llama-3-8b-chat-hf', messages: [{ role: 'user', content: tinyPrompt }], max_tokens: 5 });
         break;
       case 'openrouter':
-        url = 'https://openrouter.ai/api/v1/models';
+        url = 'https://openrouter.ai/api/v1/chat/completions';
+        body = JSON.stringify({ model: 'meta-llama/llama-3-8b-instruct:free', messages: [{ role: 'user', content: tinyPrompt }], max_tokens: 5 });
         break;
       case 'anthropic':
         url = 'https://api.anthropic.com/v1/messages';
-        method = 'POST';
         headers = {
           'x-api-key': apiKey,
           'anthropic-version': '2023-06-01',
           'Content-Type': 'application/json'
         };
-        body = JSON.stringify({
-          model: 'claude-3-haiku-20240307',
-          max_tokens: 5,
-          messages: [{ role: 'user', content: 'Hi' }]
-        });
+        body = JSON.stringify({ model: 'claude-3-haiku-20240307', max_tokens: 5, messages: [{ role: 'user', content: tinyPrompt }] });
         break;
       case 'xai':
-        url = 'https://api.x.ai/v1/models';
+        url = 'https://api.x.ai/v1/chat/completions';
+        body = JSON.stringify({ model: 'grok-beta', messages: [{ role: 'user', content: tinyPrompt }], max_tokens: 5 });
         break;
       case 'groq':
-        url = 'https://api.groq.com/openai/v1/models';
+        url = 'https://api.groq.com/openai/v1/chat/completions';
+        body = JSON.stringify({ model: 'llama3-8b-8192', messages: [{ role: 'user', content: tinyPrompt }], max_tokens: 5 });
         break;
       case 'google-gemini':
       default:
-        url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash?key=${apiKey}`;
-        headers = {};
+        url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+        headers = { 'Content-Type': 'application/json' };
+        body = JSON.stringify({ contents: [{ parts: [{ text: tinyPrompt }] }] });
         break;
     }
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
+    const timeout = setTimeout(() => controller.abort(), 10000); // 10s max for tiny inference
 
     try {
       const fetchRes = await fetch(url, { method, headers, body, signal: controller.signal });
       clearTimeout(timeout);
 
-      if (fetchRes.ok) return { ok: true };
-      if (fetchRes.status === 401) return { ok: false, error: 'Authentication Failed — Invalid Key' };
-      if (fetchRes.status === 400) {
+      if (fetchRes.ok) {
         const data = await fetchRes.json().catch(() => ({}));
-        if ((data as any)?.error?.message?.includes('API key not valid')) {
-          return { ok: false, error: 'Authentication Failed — Invalid Key' };
-        }
-        return { ok: false, error: 'Bad Request (400)' };
+        if (!data) return { ok: false, error: 'JSON parse failed' };
+        return { ok: true };
       }
-      if (fetchRes.status === 403) return { ok: false, error: 'Access Denied (403)' };
-      if (fetchRes.status === 429) return { ok: false, error: 'Rate Limited or Quota Exceeded (429)' };
+
+      const errData = await fetchRes.json().catch(() => ({}));
+      const errMessage = errData?.error?.message || errData?.message || '';
+
+      if (fetchRes.status === 401) return { ok: false, error: 'Authentication Failed — Invalid Key' };
+      if (fetchRes.status === 402) return { ok: false, error: 'Billing Required' };
+      if (fetchRes.status === 403) {
+        if (errMessage.toLowerCase().includes('billing') || errMessage.toLowerCase().includes('credit')) {
+          return { ok: false, error: 'Billing Required' };
+        }
+        return { ok: false, error: 'Access Denied (403)' };
+      }
+      if (fetchRes.status === 429) {
+        if (errMessage.toLowerCase().includes('quota') || errMessage.toLowerCase().includes('insufficient_quota')) {
+          return { ok: false, error: 'Quota Exceeded' };
+        }
+        return { ok: false, error: 'Rate Limited' };
+      }
+      if (fetchRes.status === 400) {
+        if (errMessage.toLowerCase().includes('invalid')) return { ok: false, error: 'Authentication Failed — Invalid Key' };
+        return { ok: false, error: `Bad Request: ${errMessage.substring(0, 50)}` };
+      }
       if (fetchRes.status >= 500) return { ok: false, error: 'Provider Offline or Server Error' };
       return { ok: false, error: `Provider Error [HTTP ${fetchRes.status}]` };
     } finally {

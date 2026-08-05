@@ -46,6 +46,9 @@ export interface NormalizedAiResponse {
   error?: string;
   fallbackTriggered?: boolean;
   retries?: number;
+  keySource?: string;
+  keyLabel?: string;
+  trace?: any[];
 }
 
 export interface AiDiagnosticsData {

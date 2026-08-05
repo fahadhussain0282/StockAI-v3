@@ -15,15 +15,17 @@ async function test() {
     fileName: "test.png",
     fileType: "image/png",
     base64Data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
-    provider: "openai",
-    selectedModel: "gpt-4o"
+    provider: "google-gemini",
+    selectedModel: "gemini-1.5-flash"
   };
 
-  const res = await fetch('https://stockai-v3-one.vercel.app/api/admin/fooooobar', {
-    method: 'GET',
+  const res = await fetch('https://stockai-v3-one.vercel.app/api/generate-metadata', {
+    method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
-    }
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
   });
 
   console.log('Status:', res.status);

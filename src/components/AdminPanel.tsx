@@ -869,11 +869,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   currentUser,
   subscription,
   onUpdateSubscription,
-  onExitAdmin
+onExitAdmin
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'add-member' | 'subscriptions' | 'devices' | 'analytics' | 'audit' | 'settings' | 'support' | 'api-management' | 'plans' | 'system-health' | 'licenses' | 'plan-history' | 'user-keys'>('overview');
   const [apiSubTab, setApiSubTab] = useState<'key-pool' | 'models'>('key-pool');
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
+  const [keyDiagnostics, setKeyDiagnostics] = useState<any>(null);
+  
+  const fetchKeyDiagnostics = async () => {
+    try {
+      const token = localStorage.getItem('stockai_auth_token');
+      if (!token) return;
+      const res = await fetch('/api/admin/key-diagnostics', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setKeyDiagnostics(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch key diagnostics:', err);
+    }
+  };
+
   const [users, setUsers] = useState<AdminUserRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -1585,6 +1603,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             >
               <Activity className="w-4 h-4 text-zinc-400" />
               Analytics
+            </button>
+
+            <button
+              onClick={() => { setActiveTab('key-diagnostics'); fetchKeyDiagnostics(); }}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded text-xs font-medium transition-colors ${
+                activeTab === 'key-diagnostics' ? 'bg-zinc-800 text-white font-semibold shadow-sm' : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
+              }`}
+            >
+              <Activity className="w-4 h-4 text-blue-400" />
+              Key Diagnostics
             </button>
 
             <button
@@ -2442,6 +2470,79 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         </div>
                       ))}
                     </div>
+                  </div>
+                )}
+
+                {/* Key Diagnostics Tab */}
+                {activeTab === 'key-diagnostics' && (
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-base font-bold text-white">API Key Diagnostics</h3>
+                        <p className="text-xs text-zinc-400">Live health metrics across all configured provider keys.</p>
+                      </div>
+                      <button onClick={fetchKeyDiagnostics} className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-semibold rounded transition-colors flex items-center gap-2">
+                        <RefreshCw className="w-3.5 h-3.5" /> Refresh
+                      </button>
+                    </div>
+
+                    {!keyDiagnostics ? (
+                      <div className="text-center py-12 text-zinc-500 text-xs font-mono">Loading diagnostics...</div>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          {[
+                            { label: 'Total Keys', value: keyDiagnostics.metrics.totalKeys, color: 'text-white' },
+                            { label: 'Healthy', value: keyDiagnostics.metrics.healthyKeys, color: 'text-emerald-400' },
+                            { label: 'Invalid Auth', value: keyDiagnostics.metrics.invalidKeys, color: 'text-red-400' },
+                            { label: 'Billing Required', value: keyDiagnostics.metrics.billingRequired, color: 'text-amber-400' },
+                            { label: 'Quota Exceeded', value: keyDiagnostics.metrics.quotaExceeded, color: 'text-orange-400' },
+                            { label: 'Rate Limited', value: keyDiagnostics.metrics.rateLimited, color: 'text-yellow-400' },
+                            { label: 'Disabled', value: keyDiagnostics.metrics.disabled, color: 'text-zinc-500' },
+                            { label: 'Avg Latency', value: `${keyDiagnostics.metrics.avgLatencyMs}ms`, color: 'text-blue-400' }
+                          ].map((m, i) => (
+                            <div key={i} className="p-4 bg-zinc-900/60 border border-zinc-800 rounded-lg">
+                              <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">{m.label}</div>
+                              <div className={`text-xl font-bold ${m.color}`}>{m.value}</div>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="overflow-hidden border border-zinc-800 rounded-lg">
+                          <table className="w-full text-left text-xs">
+                            <thead className="bg-zinc-900/80 border-b border-zinc-800 text-zinc-400">
+                              <tr>
+                                <th className="px-4 py-3 font-semibold">Provider</th>
+                                <th className="px-4 py-3 font-semibold">Model</th>
+                                <th className="px-4 py-3 font-semibold">Total Keys</th>
+                                <th className="px-4 py-3 font-semibold">Healthy</th>
+                                <th className="px-4 py-3 font-semibold">Success %</th>
+                                <th className="px-4 py-3 font-semibold">Avg Latency</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-zinc-800/50 bg-zinc-900/20">
+                              {keyDiagnostics.providers.map((p: any) => (
+                                <tr key={p.provider} className="hover:bg-zinc-900/40">
+                                  <td className="px-4 py-3 font-medium text-zinc-300 capitalize">{p.provider}</td>
+                                  <td className="px-4 py-3 text-zinc-400">{p.model}</td>
+                                  <td className="px-4 py-3 text-zinc-400">{p.totalKeys}</td>
+                                  <td className="px-4 py-3 text-emerald-400">{p.healthyKeys}</td>
+                                  <td className="px-4 py-3 text-zinc-400">
+                                    <div className="flex items-center gap-2">
+                                      <span>{p.successRate}%</span>
+                                      <div className="w-16 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                                        <div className="h-full bg-blue-500" style={{ width: `${p.successRate}%` }}></div>
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-3 text-zinc-400">{p.avgLatencyMs}ms</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
 

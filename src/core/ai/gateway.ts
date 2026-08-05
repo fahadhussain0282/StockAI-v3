@@ -31,29 +31,39 @@ export class Gateway {
 
     const primaryProvider = (options.provider && options.provider.trim().length > 0)
       ? options.provider
-      : PROVIDER_FALLBACK_ORDER[0];
-      
-    let rawChain = buildProviderChain(primaryProvider);
-    if (options.userId && isDbAvailable()) {
-      try {
-        const db = getDb();
-        if (db) {
-          const settings = await db.userProviderSettings.findUnique({ where: { userId: options.userId } });
-          if (settings && settings.fallbackOrder) {
-            const userChain = JSON.parse(settings.fallbackOrder);
-            if (Array.isArray(userChain) && userChain.length > 0) {
-              rawChain = [...new Set([primaryProvider, ...userChain, ...rawChain])];
-            }
-          }
-        }
-      } catch (err) {}
-    }
+      : 'google-gemini';
 
-    const [first, ...rest] = rawChain;
-    const sortedFallbacks = rest.sort((a, b) => AiHealth.getHealthScore(b) - AiHealth.getHealthScore(a));
-    const providersToTry = [first, ...sortedFallbacks];
+    const FREE_PROVIDERS = ['google-gemini', 'groq', 'openrouter', 'together', 'mistral'];
+    
+    // Build dynamic chain: 
+    // 1. Primary provider first
+    // 2. All other FREE providers sorted by health, then latency, then success rate
+    const otherFreeProviders = FREE_PROVIDERS.filter(p => p !== primaryProvider);
+    
+    // Sort logic (Health > Latency > Success Rate)
+    const sortedFallbacks = otherFreeProviders.sort((a, b) => {
+      const healthA = AiHealth.getHealthScore(a);
+      const healthB = AiHealth.getHealthScore(b);
+      if (healthA !== healthB) return healthB - healthA; // Higher health first
+      
+      const statsA = AiHealth.getStats(a);
+      const statsB = AiHealth.getStats(b);
+      
+      if (statsA.latency !== statsB.latency) {
+        if (statsA.latency === 0) return 1; // 0 latency means unused, deprioritize
+        if (statsB.latency === 0) return -1;
+        return statsA.latency - statsB.latency; // Lower latency first
+      }
+      
+      const successRateA = statsA.successRate || 0;
+      const successRateB = statsB.successRate || 0;
+      return successRateB - successRateA; // Higher success rate first
+    });
+
+    const providersToTry = [primaryProvider, ...sortedFallbacks];
     
     let totalRetries = 0;
+    let lastErrorObj: any = null;
 
     for (const providerId of providersToTry) {
       if (!CircuitBreakerService.isAllowed(providerId)) {
@@ -163,7 +173,7 @@ export class Gateway {
           }
           response.parsedResponse = JSONRepair.normalizeMetadata(response.parsedResponse);
 
-          return { ...response, fallbackTriggered: providerId !== primaryProvider, retries: totalRetries };
+          return { ...response, fallbackTriggered: providerId !== primaryProvider, retries: totalRetries, keySource: keyType, keyLabel, trace };
 
         } catch (err: any) {
           totalRetries++;
@@ -204,8 +214,8 @@ export class Gateway {
 
     // Include the diagnostic trace in the thrown error so ai-routes can parse it
     throw new Error(JSON.stringify({
-      code: 'GATEWAY_EXHAUSTED',
-      message: `StockAI Gateway exhausted all ${providersToTry.length} providers.`,
+      code: 'NO_FREE_PROVIDER_CONFIGURED',
+      message: 'No active FREE AI provider found. Supported providers: Gemini, Groq, OpenRouter, Together, Mistral',
       trace
     }));
   }

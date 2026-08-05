@@ -69,6 +69,97 @@ router.get('/users', async (req: Request, res: Response) => {
   return res.json({ users: userList, auditLogs });
 });
 
+// Admin Key Diagnostics Endpoint
+router.get('/key-diagnostics', async (req: Request, res: Response) => {
+  try {
+    const db = await requireDb(res);
+    if (!db) return;
+
+    const allKeys = await db.userApiKey.findMany();
+    
+    let totalKeys = allKeys.length;
+    let healthyKeys = 0;
+    let invalidKeys = 0;
+    let billingRequired = 0;
+    let quotaExceeded = 0;
+    let rateLimited = 0;
+    let disabled = 0;
+    let corrupted = 0;
+    let totalLatency = 0;
+    let latencyCount = 0;
+    
+    let lastSuccess = null;
+    let lastFailure = null;
+
+    const providerStats: Record<string, { total: number; healthy: number; sumLatency: number; latCount: number; successCount: number; failureCount: number }> = {};
+
+    for (const k of allKeys) {
+      if (!providerStats[k.provider]) {
+        providerStats[k.provider] = { total: 0, healthy: 0, sumLatency: 0, latCount: 0, successCount: 0, failureCount: 0 };
+      }
+      providerStats[k.provider].total++;
+      
+      if (!k.isEnabled) disabled++;
+      else if (k.isHealthy) {
+        healthyKeys++;
+        providerStats[k.provider].healthy++;
+      } else {
+        const err = (k.lastErrorMessage || '').toLowerCase();
+        if (err.includes('auth failed') || err.includes('invalid')) invalidKeys++;
+        else if (err.includes('billing')) billingRequired++;
+        else if (err.includes('quota')) quotaExceeded++;
+        else if (err.includes('rate limit')) rateLimited++;
+        else corrupted++;
+      }
+
+      if (k.avgLatencyMs > 0) {
+        totalLatency += k.avgLatencyMs;
+        latencyCount++;
+        providerStats[k.provider].sumLatency += k.avgLatencyMs;
+        providerStats[k.provider].latCount++;
+      }
+      
+      providerStats[k.provider].successCount += k.successCount;
+      providerStats[k.provider].failureCount += k.failureCount;
+
+      if (k.lastSuccessAt && (!lastSuccess || k.lastSuccessAt > lastSuccess)) lastSuccess = k.lastSuccessAt;
+      if (k.lastFailureAt && (!lastFailure || k.lastFailureAt > lastFailure)) lastFailure = k.lastFailureAt;
+    }
+
+    const providerList = Object.keys(providerStats).map(provider => {
+      const p = providerStats[provider];
+      const sumReqs = p.successCount + p.failureCount;
+      return {
+        provider,
+        model: 'auto', // Dynamic model selection
+        totalKeys: p.total,
+        healthyKeys: p.healthy,
+        avgLatencyMs: p.latCount > 0 ? Math.round(p.sumLatency / p.latCount) : 0,
+        successRate: sumReqs > 0 ? Math.round((p.successCount / sumReqs) * 100) : 0
+      };
+    });
+
+    res.json({
+      metrics: {
+        totalKeys,
+        healthyKeys,
+        invalidKeys,
+        billingRequired,
+        quotaExceeded,
+        rateLimited,
+        disabled,
+        corrupted,
+        avgLatencyMs: latencyCount > 0 ? Math.round(totalLatency / latencyCount) : 0,
+        lastSuccessfulGeneration: lastSuccess,
+        lastFailedGeneration: lastFailure
+      },
+      providers: providerList
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to load key diagnostics', details: err.message });
+  }
+});
+
 // Admin User API Keys Endpoint
 router.get('/user-keys', async (req: Request, res: Response) => {
   try {
