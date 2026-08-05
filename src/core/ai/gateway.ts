@@ -33,34 +33,22 @@ export class Gateway {
       ? options.provider
       : 'google-gemini';
 
-    const FREE_PROVIDERS = ['google-gemini', 'groq', 'openrouter', 'together', 'mistral'];
+    const STRICT_FALLBACK_CHAIN = [
+      'google-gemini',
+      'groq',
+      'openrouter',
+      'together',
+      'mistral',
+      'openai',
+      'anthropic',
+      'xai'
+    ];
     
-    // Build dynamic chain: 
-    // 1. Primary provider first
-    // 2. All other FREE providers sorted by health, then latency, then success rate
-    const otherFreeProviders = FREE_PROVIDERS.filter(p => p !== primaryProvider);
-    
-    // Sort logic (Health > Latency > Success Rate)
-    const sortedFallbacks = otherFreeProviders.sort((a, b) => {
-      const healthA = AiHealth.getHealthScore(a);
-      const healthB = AiHealth.getHealthScore(b);
-      if (healthA !== healthB) return healthB - healthA; // Higher health first
-      
-      const statsA = AiHealth.getStats(a);
-      const statsB = AiHealth.getStats(b);
-      
-      if (statsA.latency !== statsB.latency) {
-        if (statsA.latency === 0) return 1; // 0 latency means unused, deprioritize
-        if (statsB.latency === 0) return -1;
-        return statsA.latency - statsB.latency; // Lower latency first
-      }
-      
-      const successRateA = statsA.successRate || 0;
-      const successRateB = statsB.successRate || 0;
-      return successRateB - successRateA; // Higher success rate first
-    });
-
-    const providersToTry = [primaryProvider, ...sortedFallbacks];
+    // Build chain: Primary provider first, then strict order (omitting primary to avoid duplicate)
+    const providersToTry = [
+      primaryProvider,
+      ...STRICT_FALLBACK_CHAIN.filter(p => p !== primaryProvider)
+    ];
     
     let totalRetries = 0;
     let lastErrorObj: any = null;

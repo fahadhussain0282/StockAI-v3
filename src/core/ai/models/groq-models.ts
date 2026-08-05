@@ -12,10 +12,20 @@ import { AiModelDefinition } from '../types';
 export const GROQ_MODELS: AiModelDefinition[] = [
   // ─── Vision Models (Free Tier) ────────────────────────────────────────────
   {
-    id: 'llama-3.2-90b-vision-preview',
-    name: 'Llama 3.2 90B Vision',
+    id: 'qwen-3.6-27b',
+    name: 'Qwen 3.6 27B (Multimodal)',
     capabilities: { vision: true, streaming: true, json: true },
-    contextWindow: 8192,
+    contextWindow: 131072,
+    maxOutputTokens: 8192,
+    freeTier: true,
+    deprecated: false,
+    tier: 'free'
+  },
+  {
+    id: 'qwen-3-vl-32b-instruct',
+    name: 'Qwen 3 VL 32B',
+    capabilities: { vision: true, streaming: true, json: true },
+    contextWindow: 32768,
     maxOutputTokens: 8192,
     freeTier: true,
     deprecated: false,
@@ -53,20 +63,20 @@ export const GROQ_MODELS: AiModelDefinition[] = [
     tier: 'free'
   },
   {
-    id: 'llama3-70b-8192',
-    name: 'Llama 3 70B',
+    id: 'gpt-oss-120b',
+    name: 'GPT-OSS-120B',
     capabilities: { vision: false, streaming: true, json: true },
-    contextWindow: 8192,
+    contextWindow: 32768,
     maxOutputTokens: 8192,
     freeTier: true,
     deprecated: false,
     tier: 'free'
   },
   {
-    id: 'llama3-8b-8192',
-    name: 'Llama 3 8B',
+    id: 'gpt-oss-20b',
+    name: 'GPT-OSS-20B',
     capabilities: { vision: false, streaming: true, json: true },
-    contextWindow: 8192,
+    contextWindow: 32768,
     maxOutputTokens: 8192,
     freeTier: true,
     deprecated: false,
@@ -91,8 +101,9 @@ export const GROQ_MODELS: AiModelDefinition[] = [
  * Gateway falls back through this list if preferred model fails.
  */
 export const GROQ_VISION_FALLBACK_CHAIN = [
-  'meta-llama/llama-4-maverick-17b-128e-instruct',
-  'llama-3.2-90b-vision-preview'
+  'qwen-3.6-27b',
+  'qwen-3-vl-32b-instruct',
+  'meta-llama/llama-4-maverick-17b-128e-instruct'
 ];
 
 /** Default text fallback when no vision is needed */
@@ -102,5 +113,5 @@ export const GROQ_TEXT_FALLBACK_CHAIN = [
   'llama3-70b-8192'
 ];
 
-export const GROQ_DEFAULT_VISION_MODEL = 'llama-3.2-90b-vision-preview';
-export const GROQ_DEFAULT_TEXT_MODEL = 'llama-3.3-70b-versatile';
+export const GROQ_DEFAULT_VISION_MODEL = 'qwen-3.6-27b';
+export const GROQ_DEFAULT_TEXT_MODEL = 'gpt-oss-20b';

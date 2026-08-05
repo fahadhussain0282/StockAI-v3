@@ -11,8 +11,17 @@ export const OPENROUTER_APP_NAME = 'StockAI';
  */
 export const OPENROUTER_MODELS: AiModelDefinition[] = [
   {
-    id: 'google/gemma-4-31b-it:free',
-    name: 'Gemma 4 31B (Free)',
+    id: 'openrouter/free',
+    name: 'OpenRouter Auto (Free)',
+    capabilities: { vision: true, streaming: true, json: true },
+    contextWindow: 128000,
+    maxOutputTokens: 8192,
+    freeTier: true,
+    tier: 'free'
+  },
+  {
+    id: 'google/gemini-2.0-flash-exp:free',
+    name: 'Gemini 2.0 Flash (Free)',
     capabilities: { vision: true, streaming: true, json: true },
     contextWindow: 1048576,
     maxOutputTokens: 8192,
@@ -65,8 +74,8 @@ export const OPENROUTER_MODELS: AiModelDefinition[] = [
     tier: 'paid'
   },
   {
-    id: 'meta-llama/llama-4-maverick:free',
-    name: 'Llama 4 Maverick (Free)',
+    id: 'meta-llama/llama-3.2-11b-vision-instruct:free',
+    name: 'Llama 3.2 11B Vision (Free)',
     capabilities: { vision: true, streaming: true, json: true },
     contextWindow: 131072,
     maxOutputTokens: 4096,
@@ -74,8 +83,8 @@ export const OPENROUTER_MODELS: AiModelDefinition[] = [
     tier: 'free'
   },
   {
-    id: 'qwen/qwen2.5-vl-72b-instruct:free',
-    name: 'Qwen 2.5 VL 72B (Free)',
+    id: 'qwen/qwen-2-vl-7b-instruct:free',
+    name: 'Qwen 2 VL 7B (Free)',
     capabilities: { vision: true, streaming: true, json: true },
     contextWindow: 32768,
     maxOutputTokens: 8192,
@@ -102,16 +111,14 @@ export const OPENROUTER_MODELS: AiModelDefinition[] = [
   }
 ];
 
-export const OPENROUTER_DEFAULT_VISION_MODEL = 'google/gemma-4-31b-it:free';
-export const OPENROUTER_DEFAULT_TEXT_MODEL = 'google/gemma-4-31b-it:free';
+export const OPENROUTER_DEFAULT_VISION_MODEL = 'openrouter/free';
+export const OPENROUTER_DEFAULT_TEXT_MODEL = 'openrouter/free';
 
 export const OPENROUTER_VISION_FALLBACK_CHAIN = [
-  'google/gemma-4-31b-it:free',
-  'google/gemini-flash-1.5',
-  'meta-llama/llama-4-maverick:free',
-  'qwen/qwen2.5-vl-72b-instruct:free',
-  'google/gemini-flash-1.5',
-  'openai/gpt-4o-mini'
+  'openrouter/free',
+  'google/gemini-2.0-flash-exp:free',
+  'meta-llama/llama-3.2-11b-vision-instruct:free',
+  'qwen/qwen-2-vl-7b-instruct:free'
 ];
 
 export const OPENROUTER_TEXT_FALLBACK_CHAIN = [

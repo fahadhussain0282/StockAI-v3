@@ -370,12 +370,19 @@ router.post('/generate-metadata', async (req: Request, res: Response) => {
 
     const elapsed = Date.now() - routeStart;
     
-    // Console log the trace if in DEBUG mode
-    if (process.env.NODE_ENV !== 'production' || process.env.DEBUG === 'true') {
-      console.log(`[Request ID: ${requestId}] Success: true, Provider: ${metadataResult?.provider}, Model: ${metadataResult?.model}, KeySource: ${(metadataResult as any)?.keySource}, Latency: ${elapsed}ms`);
+    // VERBOSE SUCCESS LOGGING (Always on in production for diagnostics, NO API KEYS)
+    console.log(`\n╔══ [generate-metadata] SUCCESS ══════════════════════════════`);
+    console.log(`║  Request ID       : ${requestId}`);
+    console.log(`║  Final Provider   : ${metadataResult?.provider}`);
+    console.log(`║  Model            : ${metadataResult?.model}`);
+    console.log(`║  Key Source       : ${(metadataResult as any)?.keySource || 'System Default'}`);
+    console.log(`║  Latency          : ${elapsed}ms`);
+    console.log(`║  Retries          : ${(metadataResult as any)?.retries || 0}`);
+    console.log(`║  Fallback Used    : ${(metadataResult as any)?.fallbackTriggered ? 'Yes' : 'No'}`);
+    console.log(`╚══════════════════════════════════════════════════════════════\n`);
+    
+    if ((metadataResult as any)?.fallbackTriggered) {
       console.log(`[Request ID: ${requestId}] Fallback Path Trace:`, JSON.stringify((metadataResult as any)?.trace, null, 2));
-    } else {
-      console.log(`[Request ID: ${requestId}] Metadata generated in ${elapsed}ms via ${metadataResult?.provider}`);
     }
 
     // Log telemetry success to DB (non-blocking)

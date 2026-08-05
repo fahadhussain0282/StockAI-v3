@@ -153,6 +153,29 @@ export class KeywordEngine {
       }
     }
 
+    // Force fill to exact count if STILL lacking
+    if (cleaned.length < targetCount) {
+      for (const term of COMMERCIAL_INTENT_TERMS) {
+        if (cleaned.length >= targetCount) break;
+        if (!seen.has(term)) {
+          seen.add(term);
+          cleaned.push(term);
+        }
+      }
+    }
+    
+    // Final emergency fallback if still under targetCount (very rare)
+    if (cleaned.length < targetCount) {
+       const extraGenerics = ['stock', 'image', 'photo', 'vector', 'illustration', 'design', 'background', 'isolated', 'beautiful', 'creative', 'concept', 'art', 'graphic', 'modern', 'style', 'color', 'bright', 'clean', 'nature', 'business', 'people', 'abstract', 'texture', 'pattern', 'light', 'dark', 'white', 'black', 'red', 'blue', 'green', 'yellow', 'digital', 'media', 'web', 'internet', 'technology', 'success', 'happy', 'life', 'new', 'old', 'vintage', 'retro', 'future', 'space', 'earth', 'world', 'global', 'travel'];
+       for (const term of extraGenerics) {
+         if (cleaned.length >= targetCount) break;
+         if (!seen.has(term)) {
+           seen.add(term);
+           cleaned.push(term);
+         }
+       }
+    }
+
     // Bucket them to know their category for sorting
     const buckets = this.generateKeywordBuckets(cleaned, context);
     

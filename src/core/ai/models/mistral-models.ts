@@ -13,7 +13,7 @@ export const MISTRAL_MODELS: AiModelDefinition[] = [
     capabilities: { vision: true, streaming: true, json: true },
     contextWindow: 128000,
     maxOutputTokens: 4096,
-    freeTier: false,
+    freeTier: true,
     deprecated: false,
     tier: 'paid'
   },
@@ -23,7 +23,7 @@ export const MISTRAL_MODELS: AiModelDefinition[] = [
     capabilities: { vision: true, streaming: true, json: true },
     contextWindow: 128000,
     maxOutputTokens: 4096,
-    freeTier: false,
+    freeTier: true,
     deprecated: false,
     tier: 'paid'
   },
@@ -34,7 +34,7 @@ export const MISTRAL_MODELS: AiModelDefinition[] = [
     capabilities: { vision: false, streaming: true, json: true },
     contextWindow: 131072,
     maxOutputTokens: 4096,
-    freeTier: false,
+    freeTier: true,
     deprecated: false,
     tier: 'paid'
   },
@@ -45,7 +45,7 @@ export const MISTRAL_MODELS: AiModelDefinition[] = [
     capabilities: { vision: false, streaming: true, json: true },
     contextWindow: 32768,
     maxOutputTokens: 4096,
-    freeTier: false,
+    freeTier: true,
     deprecated: false,
     tier: 'paid'
   },
@@ -56,7 +56,7 @@ export const MISTRAL_MODELS: AiModelDefinition[] = [
     capabilities: { vision: false, streaming: true, json: true },
     contextWindow: 32768,
     maxOutputTokens: 4096,
-    freeTier: false,
+    freeTier: true,
     deprecated: false,
     tier: 'paid'
   }
