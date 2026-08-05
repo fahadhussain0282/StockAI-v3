@@ -871,7 +871,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onUpdateSubscription,
 onExitAdmin
 }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'add-member' | 'subscriptions' | 'devices' | 'analytics' | 'audit' | 'settings' | 'support' | 'api-management' | 'plans' | 'system-health' | 'licenses' | 'plan-history' | 'user-keys'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'add-member' | 'subscriptions' | 'devices' | 'analytics' | 'audit' | 'settings' | 'support' | 'api-management' | 'plans' | 'system-health' | 'licenses' | 'plan-history' | 'user-keys' | 'key-diagnostics'>('overview');
   const [apiSubTab, setApiSubTab] = useState<'key-pool' | 'models'>('key-pool');
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [keyDiagnostics, setKeyDiagnostics] = useState<any>(null);

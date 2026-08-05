@@ -247,6 +247,8 @@ Return output strictly in valid JSON format matching:
       }
     }
 
+    const cleanFileTitle = sanitizeFileName(fileName);
+
     if (!parsed || typeof parsed !== 'object' || Object.keys(parsed).length === 0) {
       console.warn('[StockAI] AI returned invalid JSON. Generating fallback metadata based on context.');
       parsed = {
@@ -255,8 +257,6 @@ Return output strictly in valid JSON format matching:
         keywords: ['stock', 'image', 'photo', 'design', 'background']
       };
     }
-
-    const cleanFileTitle = sanitizeFileName(fileName);
 
     // ── Normalize sharedContext with complete defaults to prevent any undefined access ──
     const rawContext = parsed.sharedContext;

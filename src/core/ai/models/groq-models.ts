@@ -12,8 +12,8 @@ import { AiModelDefinition } from '../types';
 export const GROQ_MODELS: AiModelDefinition[] = [
   // ─── Vision Models (Free Tier) ────────────────────────────────────────────
   {
-    id: 'qwen-3.6-27b',
-    name: 'Qwen 3.6 27B (Multimodal)',
+    id: 'llama-3.2-90b-vision-preview',
+    name: 'Llama 3.2 90B Vision',
     capabilities: { vision: true, streaming: true, json: true },
     contextWindow: 131072,
     maxOutputTokens: 8192,
@@ -22,20 +22,10 @@ export const GROQ_MODELS: AiModelDefinition[] = [
     tier: 'free'
   },
   {
-    id: 'qwen-3-vl-32b-instruct',
-    name: 'Qwen 3 VL 32B',
+    id: 'llama-3.2-11b-vision-preview',
+    name: 'Llama 3.2 11B Vision',
     capabilities: { vision: true, streaming: true, json: true },
-    contextWindow: 32768,
-    maxOutputTokens: 8192,
-    freeTier: true,
-    deprecated: false,
-    tier: 'free'
-  },
-  {
-    id: 'meta-llama/llama-4-maverick-17b-128e-instruct',
-    name: 'Llama 4 Maverick 17B (Vision)',
-    capabilities: { vision: true, streaming: true, json: true },
-    contextWindow: 131072,
+    contextWindow: 8192,
     maxOutputTokens: 8192,
     freeTier: true,
     deprecated: false,
