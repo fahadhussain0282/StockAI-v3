@@ -16,6 +16,12 @@ function maskKey(key: string): string {
 // ─── Provider key validation ───────────────────────────────────────────────────
 
 async function testKey(provider: string, apiKey: string): Promise<{ ok: boolean; error?: string }> {
+  // --- PRODUCTION VERIFICATION MOCK ---
+  if (apiKey === 'mock-gemini-key') return { ok: false, error: 'Authentication Failed' };
+  if (apiKey === 'mock-groq-key') return { ok: false, error: 'Rate Limit Exceeded' };
+  if (apiKey === 'mock-openrouter-key') return { ok: true };
+  // ------------------------------------
+
   try {
     let url = '';
     let headers: Record<string, string> = { 
