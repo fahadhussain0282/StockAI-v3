@@ -97,11 +97,12 @@ ${getDescriptionPrompt()}
 ${getMarketplacePrompt(marketplaceRule.name, 'Commercial SEO focused', marketplaceRule.keywordMaxCount, 'Natural descriptive sentences')}
 `;
 
-    if (fileName.toLowerCase().endsWith('.png') || settings?.autoTransparentPngTag) systemInstruction += `\n${getTransparentPrompt()}`;
-    if (fileName.toLowerCase().match(/\.(eps|svg|ai)$/) || fileType === 'svg' || fileType === 'eps') systemInstruction += `\n${getVectorPrompt()}`;
-    if (fileName.toLowerCase().includes('icon')) systemInstruction += `\n${getIconPrompt()}`;
-    if (fileName.toLowerCase().includes('illustration') || fileName.toLowerCase().includes('drawing')) systemInstruction += `\n${getIllustrationPrompt()}`;
-    if (fileName.toLowerCase().includes('set') || fileName.toLowerCase().includes('pack')) systemInstruction += `\n${getSheetPrompt()}`;
+    const safeFileName = (fileName || '').toLowerCase();
+    if (safeFileName.endsWith('.png') || settings?.autoTransparentPngTag) systemInstruction += `\n${getTransparentPrompt()}`;
+    if (safeFileName.match(/\.(eps|svg|ai)$/) || fileType === 'svg' || fileType === 'eps') systemInstruction += `\n${getVectorPrompt()}`;
+    if (safeFileName.includes('icon')) systemInstruction += `\n${getIconPrompt()}`;
+    if (safeFileName.includes('illustration') || safeFileName.includes('drawing')) systemInstruction += `\n${getIllustrationPrompt()}`;
+    if (safeFileName.includes('set') || safeFileName.includes('pack')) systemInstruction += `\n${getSheetPrompt()}`;
 
     systemInstruction += `
 CRITICAL RULES:
