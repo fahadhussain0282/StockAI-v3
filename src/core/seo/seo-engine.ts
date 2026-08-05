@@ -302,8 +302,7 @@ Return output strictly in valid JSON format matching:
     // Refine Title using Context
     let finalTitle = TitleEngine.refineTitleToCommercialStandard(rawTitle, context, cleanFileTitle);
 
-    // Refine Keywords using Context and strict priority
-    let cleanedKeywords = KeywordEngine.ensureExactKeywordCount(rawKeywords, keywordsCount, context, marketplaceRule);
+    let cleanedKeywords = rawKeywords;
 
     // Run Specialized Engines using Context
     cleanedKeywords = TransparentEngine.optimizeKeywords(cleanedKeywords, context);
@@ -316,6 +315,9 @@ Return output strictly in valid JSON format matching:
     finalTitle = IllustrationEngine.optimizeTitle(finalTitle, context);
     cleanedKeywords = SheetEngine.optimizeKeywords(cleanedKeywords, context);
     finalTitle = SheetEngine.optimizeTitle(finalTitle, context);
+
+    // Refine Keywords using Context and strict priority (Guarantees exactly 49)
+    cleanedKeywords = KeywordEngine.ensureExactKeywordCount(cleanedKeywords, keywordsCount, context, marketplaceRule);
     
     // Final bucket generation for scores and output
     const keywordBuckets = KeywordEngine.generateKeywordBuckets(cleanedKeywords, context);

@@ -279,7 +279,7 @@ export class Gateway {
       if (result.isHealthy) {
         ApiKeyManager.recordKeySuccess(keyId, latencyMs);
       } else {
-        const msgLower = result.message.toLowerCase();
+        const msgLower = (result.message || '').toLowerCase();
         if (msgLower.includes('rate limit')) ApiKeyManager.recordKeyFailure(keyId, 'rate_limit', result.message);
         else if (msgLower.includes('quota') || msgLower.includes('billing')) ApiKeyManager.recordKeyFailure(keyId, 'quota_exhausted', result.message);
         else ApiKeyManager.recordKeyFailure(keyId, 'auth_error', result.message);

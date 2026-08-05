@@ -9,7 +9,7 @@ export class RetryService {
    * Evaluates an error message to determine if it is a rate limit issue.
    */
   static isRateLimit(errorMsg: string): boolean {
-    const msg = errorMsg.toLowerCase();
+    const msg = (errorMsg || '').toLowerCase();
     return (
       msg.includes('429') ||
       msg.includes('rate limit') ||
@@ -27,7 +27,7 @@ export class RetryService {
    * Evaluates if the error is a hard authentication/authorization failure.
    */
   static isAuthError(errorMsg: string): boolean {
-    const msg = errorMsg.toLowerCase();
+    const msg = (errorMsg || '').toLowerCase();
     return (
       msg.includes('401') ||
       msg.includes('403') ||
@@ -45,7 +45,7 @@ export class RetryService {
    * Evaluates if the error is related to quota exhaustion (billing).
    */
   static isQuotaExhausted(errorMsg: string): boolean {
-    const msg = errorMsg.toLowerCase();
+    const msg = (errorMsg || '').toLowerCase();
     return (
       msg.includes('quota exceeded') ||
       msg.includes('quota_exhausted') ||
@@ -64,7 +64,7 @@ export class RetryService {
    * Evaluates if the error is a timeout (gateway or provider level).
    */
   static isTimeout(errorMsg: string): boolean {
-    const msg = errorMsg.toLowerCase();
+    const msg = (errorMsg || '').toLowerCase();
     return (
       msg.includes('timeout') ||
       msg.includes('timed out') ||
@@ -78,7 +78,7 @@ export class RetryService {
    * Evaluates if the error is a network/connection issue.
    */
   static isConnectionError(errorMsg: string): boolean {
-    const msg = errorMsg.toLowerCase();
+    const msg = (errorMsg || '').toLowerCase();
     return (
       msg.includes('enotfound') ||
       msg.includes('econnrefused') ||
@@ -95,7 +95,7 @@ export class RetryService {
    * Evaluates if the error is a temporary server-side issue (5xx).
    */
   static isTransientError(errorMsg: string): boolean {
-    const msg = errorMsg.toLowerCase();
+    const msg = (errorMsg || '').toLowerCase();
     return (
       msg.includes('503') ||
       msg.includes('502') ||
