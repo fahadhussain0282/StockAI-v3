@@ -142,8 +142,11 @@ function prismaUserToRecord(row: any): UserRecord {
       isExpired: sub.isExpired,
       deviceId: sub.deviceId ?? ''
     } : {
-      planId: 'plan_free', planName: 'Free', price: 0, durationDays: 0,
-      activatedAt: now, expiresAt: now, isActive: false, isExpired: true, deviceId: ''
+      // No subscription record — grant a 7-day free trial automatically
+      planId: 'plan_trial', planName: '7-Day Free Trial', price: 0, durationDays: 7,
+      activatedAt: now,
+      expiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+      isActive: true, isExpired: false, deviceId: ''
     },
     activeDeviceId: row.activeDeviceId ?? '',
     createdAt: row.createdAt?.toISOString() ?? now,
