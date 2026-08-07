@@ -9,7 +9,7 @@ export class SEOScoreEngine {
     keywords: string[],
     keywordBuckets: KeywordBucket[],
     marketplaceRule: MarketplaceRule,
-    context: SharedMetadataContext,
+    context?: Partial<SharedMetadataContext>,
     options: any = {}
   ): SEOBreakdown {
     const seoExplanations: string[] = [];
@@ -17,12 +17,15 @@ export class SEOScoreEngine {
     const complianceExplanations: string[] = [];
     const suggestions: string[] = [];
 
+    const safeTitle = (title || '').trim();
+    const safeKeywords = keywords || [];
+    
     let isCriticalFailure = false;
     let seoScore = 100;
     
-    const titleWords = title.toLowerCase().split(/\s+/).filter(Boolean);
-    const titleLength = title.length;
-    const isGenericTitle = GENERIC_TITLE_PHRASES.some(phrase => title.toLowerCase().trim() === phrase || title.toLowerCase().trim() === `a ${phrase}`);
+    const titleWords = safeTitle.toLowerCase().split(/\s+/).filter(Boolean);
+    const titleLength = safeTitle.length;
+    const isGenericTitle = GENERIC_TITLE_PHRASES.some(phrase => safeTitle.toLowerCase() === phrase || safeTitle.toLowerCase() === `a ${phrase}`);
 
     // Title Check (Deterministic)
     if (isGenericTitle || titleWords.length < 4 || titleLength < marketplaceRule.titleMinLength) {
@@ -43,47 +46,48 @@ export class SEOScoreEngine {
     }
 
     // Keyword Check (Deterministic)
-    const keywordCount = keywords.length;
+    const keywordCount = safeKeywords.length;
     if (keywordCount < marketplaceRule.keywordMinCount || keywordCount > marketplaceRule.keywordMaxCount) {
       isCriticalFailure = true;
       seoScore -= 40;
       seoExplanations.push(`FAIL: Keywords count (${keywordCount}) outside bounds.`);
     }
 
-    const uniqueKeywords = new Set(keywords.map(k => k.toLowerCase().trim()));
-    if (uniqueKeywords.size < keywords.length) {
-      seoScore -= (keywords.length - uniqueKeywords.size) * 5;
+    const uniqueKeywords = new Set(safeKeywords.map(k => (k || '').toLowerCase().trim()));
+    if (uniqueKeywords.size < safeKeywords.length) {
+      seoScore -= (safeKeywords.length - uniqueKeywords.size) * 5;
     }
 
     // Commercial Quality Scoring
     let commercialScore = 100;
     
     // Evaluate average keyword quality
-    const evaluatedKeywords = uniqueKeywords.size > 0 
-      ? Array.from(uniqueKeywords).map(k => KeywordEngine.evaluateKeywordQuality(k, context, marketplaceRule))
+    const evaluatedKeywords = uniqueKeywords.size > 0 && context
+      ? Array.from(uniqueKeywords).map(k => KeywordEngine.evaluateKeywordQuality(k, context as SharedMetadataContext, marketplaceRule))
       : [];
       
     const averageKeywordQuality = evaluatedKeywords.length > 0 
       ? evaluatedKeywords.reduce((sum, k) => sum + k.totalScore, 0) / evaluatedKeywords.length
       : 0;
 
-    if (averageKeywordQuality < 70) {
+    if (averageKeywordQuality > 0 && averageKeywordQuality < 70) {
       commercialScore -= 20;
       commercialExplanations.push(`Average keyword quality (${Math.round(averageKeywordQuality)}) is below optimal threshold.`);
-    } else {
+    } else if (averageKeywordQuality >= 70) {
       commercialExplanations.push(`High average keyword quality (${Math.round(averageKeywordQuality)}/100).`);
     }
 
     // Structure matching
-    if (title.toLowerCase().includes(context.primarySubject.toLowerCase())) {
+    const primarySubject = context?.primarySubject || '';
+    if (primarySubject && safeTitle.toLowerCase().includes(primarySubject.toLowerCase())) {
       commercialScore += 5;
-    } else {
+    } else if (primarySubject) {
       commercialScore -= 10;
       commercialExplanations.push('Title does not clearly contain the primary subject.');
     }
 
     // Asset specific penalty
-    if (context.isTransparent && !title.toLowerCase().includes('transparent')) {
+    if (context?.isTransparent && !safeTitle.toLowerCase().includes('transparent')) {
       commercialScore -= 15;
       commercialExplanations.push('Transparent asset missing "transparent" in title.');
     }

@@ -167,7 +167,9 @@ const ApiKeyPoolPanel: React.FC<{ authToken: string }> = ({ authToken }) => {
         setCircuits(d.circuitStatus || {});
         setEncryptionEnabled(d.encryptionEnabled || false);
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error("Failed to load key pool data", e);
+    }
     setIsLoading(false);
   };
 
@@ -1133,7 +1135,9 @@ onExitAdmin
         }
         fetchAdminData();
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error("Failed to update user plan", e);
+    }
   };
 
   const handleToggleSuspend = async (userId: string, currentStatus: string) => {
@@ -1149,7 +1153,9 @@ onExitAdmin
         body: JSON.stringify({ userId, suspend })
       });
       fetchAdminData();
-    } catch (e) {}
+    } catch (e) {
+      console.error("Failed to toggle suspend status", e);
+    }
   };
 
   const handleRevokeDevice = async (userId: string) => {
@@ -1164,7 +1170,9 @@ onExitAdmin
         body: JSON.stringify({ userId })
       });
       fetchAdminData();
-    } catch (e) {}
+    } catch (e) {
+      console.error("Failed to revoke device", e);
+    }
   };
 
   const handleAddMemberSubmit = async (e: React.FormEvent) => {

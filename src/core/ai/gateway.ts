@@ -33,21 +33,11 @@ export class Gateway {
       ? options.provider
       : 'google-gemini';
 
-    const STRICT_FALLBACK_CHAIN = [
-      'google-gemini',
-      'groq',
-      'openrouter',
-      'together',
-      'mistral',
-      'openai',
-      'anthropic',
-      'xai'
-    ];
-    
-    // Build chain: Primary provider first, then strict order (omitting primary to avoid duplicate)
+    // Build chain: Primary provider first, then canonical fallback order (omitting primary to avoid duplicate)
+    // Source of truth: src/core/ai/fallback-chain.ts → PROVIDER_FALLBACK_ORDER
     const providersToTry = [
       primaryProvider,
-      ...STRICT_FALLBACK_CHAIN.filter(p => p !== primaryProvider)
+      ...PROVIDER_FALLBACK_ORDER.filter(p => p !== primaryProvider)
     ];
     
     let totalRetries = 0;

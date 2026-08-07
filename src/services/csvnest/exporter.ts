@@ -110,7 +110,7 @@ export function generateMarketplaceCSV(
     rows.push(rowData.map(escapeCsvField).join(','));
   }
 
-  return rows.join('\r\n');
+  return '\uFEFF' + rows.join('\r\n');
 }
 
 /**

@@ -3,19 +3,37 @@ import { AiModelDefinition } from '../types';
 /**
  * Groq Cloud — Centralized Model Registry
  * Source: https://console.groq.com/docs/models
- * Updated: 2025-07 — Verified working models on free tier
+ * Updated: 2025-08 — Verified working models on free tier
  *
  * IMPORTANT: Models marked deprecated=true will be SKIPPED by the gateway.
- * The llama-4-scout model is TEXT-ONLY (no vision support).
- * For vision on Groq, use llama-3.2-11b-vision-preview (free, confirmed working).
+ *
+ * Vision models confirmed working on Groq free tier as of 2025-08:
+ *   - llama-3.2-11b-vision-preview  (free, vision)
+ *   - llama-3.2-90b-vision-preview  (free, vision — high quality)
+ *   - meta-llama/llama-4-maverick-17b-128e-instruct (text + vision capable)
+ *
+ * Text-only models (no vision):
+ *   - llama-3.3-70b-versatile
+ *   - meta-llama/llama-4-scout-17b-16e-instruct
+ *   - gpt-oss-20b
  */
 export const GROQ_MODELS: AiModelDefinition[] = [
   // ─── Vision Models (Free Tier) ────────────────────────────────────────────
   {
+    id: 'meta-llama/llama-4-maverick-17b-128e-instruct',
+    name: 'Llama 4 Maverick 17B (Vision)',
+    capabilities: { vision: true, streaming: true, json: true },
+    contextWindow: 131072,
+    maxOutputTokens: 8192,
+    freeTier: true,
+    deprecated: false,
+    tier: 'free'
+  },
+  {
     id: 'llama-3.2-90b-vision-preview',
     name: 'Llama 3.2 90B Vision',
     capabilities: { vision: true, streaming: true, json: true },
-    contextWindow: 131072,
+    contextWindow: 8192,
     maxOutputTokens: 8192,
     freeTier: true,
     deprecated: false,
@@ -31,10 +49,10 @@ export const GROQ_MODELS: AiModelDefinition[] = [
     deprecated: false,
     tier: 'free'
   },
-  // ─── Text Models (Free Tier) ──────────────────────────────────────────────
+  // ─── Text-Only Models (Free Tier) ─────────────────────────────────────────
   {
     id: 'meta-llama/llama-4-scout-17b-16e-instruct',
-    name: 'Llama 4 Scout 17B',
+    name: 'Llama 4 Scout 17B (Text)',
     capabilities: { vision: false, streaming: true, json: true },
     contextWindow: 131072,
     maxOutputTokens: 8192,
@@ -44,7 +62,7 @@ export const GROQ_MODELS: AiModelDefinition[] = [
   },
   {
     id: 'llama-3.3-70b-versatile',
-    name: 'Llama 3.3 70B Versatile',
+    name: 'Llama 3.3 70B Versatile (Text)',
     capabilities: { vision: false, streaming: true, json: true },
     contextWindow: 32768,
     maxOutputTokens: 32768,
@@ -53,18 +71,8 @@ export const GROQ_MODELS: AiModelDefinition[] = [
     tier: 'free'
   },
   {
-    id: 'gpt-oss-120b',
-    name: 'GPT-OSS-120B',
-    capabilities: { vision: false, streaming: true, json: true },
-    contextWindow: 32768,
-    maxOutputTokens: 8192,
-    freeTier: true,
-    deprecated: false,
-    tier: 'free'
-  },
-  {
     id: 'gpt-oss-20b',
-    name: 'GPT-OSS-20B',
+    name: 'GPT-OSS-20B (Text)',
     capabilities: { vision: false, streaming: true, json: true },
     contextWindow: 32768,
     maxOutputTokens: 8192,
@@ -72,36 +80,38 @@ export const GROQ_MODELS: AiModelDefinition[] = [
     deprecated: false,
     tier: 'free'
   },
-  // ─── Deprecated (retained for fallback resolution, will be skipped) ───────
   {
-    id: 'llama-3.2-90b-vision-preview',
-    name: 'Llama 3.2 90B Vision (Deprecated)',
-    capabilities: { vision: true, streaming: true, json: true },
+    id: 'llama3-70b-8192',
+    name: 'Llama 3 70B (Text)',
+    capabilities: { vision: false, streaming: true, json: true },
     contextWindow: 8192,
     maxOutputTokens: 8192,
-    freeTier: false,
-    deprecated: true,
-    tier: 'deprecated'
+    freeTier: true,
+    deprecated: false,
+    tier: 'free'
   }
 ];
 
 /**
  * Ordered vision fallback chain for Groq.
- * Only includes confirmed-working vision models.
+ * ONLY includes models confirmed to be in GROQ_MODELS with vision=true.
  * Gateway falls back through this list if preferred model fails.
  */
 export const GROQ_VISION_FALLBACK_CHAIN = [
-  'qwen-3.6-27b',
-  'qwen-3-vl-32b-instruct',
-  'meta-llama/llama-4-maverick-17b-128e-instruct'
+  'meta-llama/llama-4-maverick-17b-128e-instruct',
+  'llama-3.2-90b-vision-preview',
+  'llama-3.2-11b-vision-preview'
 ];
 
-/** Default text fallback when no vision is needed */
+/** Default text fallback chain for text-only tasks */
 export const GROQ_TEXT_FALLBACK_CHAIN = [
   'llama-3.3-70b-versatile',
   'meta-llama/llama-4-scout-17b-16e-instruct',
   'llama3-70b-8192'
 ];
 
-export const GROQ_DEFAULT_VISION_MODEL = 'qwen-3.6-27b';
-export const GROQ_DEFAULT_TEXT_MODEL = 'gpt-oss-20b';
+// Default vision model — first in fallback chain, confirmed in registry
+export const GROQ_DEFAULT_VISION_MODEL = 'meta-llama/llama-4-maverick-17b-128e-instruct';
+
+// Default text model — for non-vision tasks
+export const GROQ_DEFAULT_TEXT_MODEL = 'llama-3.3-70b-versatile';

@@ -10,15 +10,8 @@ export const OPENROUTER_APP_NAME = 'StockAI';
  * These are the top vision-capable models for metadata generation.
  */
 export const OPENROUTER_MODELS: AiModelDefinition[] = [
-  {
-    id: 'openrouter/free',
-    name: 'OpenRouter Auto (Free)',
-    capabilities: { vision: true, streaming: true, json: true },
-    contextWindow: 128000,
-    maxOutputTokens: 8192,
-    freeTier: true,
-    tier: 'free'
-  },
+  // ─── Free Tier Vision Models (confirmed working 2025-08) ─────────────────
+
   {
     id: 'google/gemini-2.0-flash-exp:free',
     name: 'Gemini 2.0 Flash (Free)',
@@ -111,17 +104,18 @@ export const OPENROUTER_MODELS: AiModelDefinition[] = [
   }
 ];
 
-export const OPENROUTER_DEFAULT_VISION_MODEL = 'openrouter/free';
-export const OPENROUTER_DEFAULT_TEXT_MODEL = 'openrouter/free';
+// Use confirmed free vision model as default (NOT the pseudo 'openrouter/free' which is invalid)
+export const OPENROUTER_DEFAULT_VISION_MODEL = 'google/gemini-2.0-flash-exp:free';
+export const OPENROUTER_DEFAULT_TEXT_MODEL = 'google/gemini-2.0-flash-exp:free';
 
 export const OPENROUTER_VISION_FALLBACK_CHAIN = [
-  'openrouter/free',
   'google/gemini-2.0-flash-exp:free',
   'meta-llama/llama-3.2-11b-vision-instruct:free',
-  'qwen/qwen-2-vl-7b-instruct:free'
+  'qwen/qwen-2-vl-7b-instruct:free',
+  'mistralai/mistral-small-3.1-24b-instruct:free'
 ];
 
 export const OPENROUTER_TEXT_FALLBACK_CHAIN = [
   'google/gemini-2.0-flash-exp:free',
-  'meta-llama/llama-4-maverick:free'
+  'meta-llama/llama-3.2-11b-vision-instruct:free'
 ];

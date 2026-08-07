@@ -202,12 +202,19 @@ Return output strictly in valid JSON format matching:
       console.error(`║  Model        : ${selectedModel || '(auto)'}`);
       console.error(`║  Raw error    : ${errMsg}`);
       console.error(`╚══════════════════════════════════════════════════════════════\n`);
-      // Provide a user-friendly message when no API keys are configured
+      
+      // If the error is already a structured JSON string from the gateway, pass it through directly
+      if (errMsg.trim().startsWith('{')) {
+        throw new Error(errMsg);
+      }
+
+      // Provide a user-friendly message when no API keys are configured (fallback)
       if (errMsg.includes('No available API key') || errMsg.includes('No API key') || errMsg.includes('No keys')) {
         throw new Error('No API keys configured. Please add your API key in Settings → API Keys.');
       }
       throw new Error(`AI Gateway Error: ${errMsg}`);
     }
+
 
     let parsed = normalizedResponse?.parsedResponse;
 

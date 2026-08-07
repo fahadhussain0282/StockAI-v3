@@ -28,7 +28,7 @@ import {
 import { MARKETPLACE_REGISTRY } from './registries/marketplaces';
 import { PROVIDER_MAP } from './registries/providers';
 import { generateMarketplaceCSV } from './services/csvnest/exporter';
-import { calculateSEOAndQualityScores } from './services/csvnest/scoring';
+import { SEOScoreEngine } from './core/seo/seo-score';
 import { encryptData, decryptData } from './utils/crypto';
 
 export default function App() {
@@ -266,7 +266,9 @@ export default function App() {
         if (savedModelsStr) {
            setProviderModelsState(JSON.parse(savedModelsStr));
         }
-      } catch (e) {}
+      } catch (e) {
+        console.warn("Failed to parse saved models", e);
+      }
     } else {
       // Completely clear all user-specific state for a new session
       setSelectedProviderState('google-gemini');
@@ -311,7 +313,7 @@ export default function App() {
     targetPlatform: 'general',
     titleLength: 70,
     descriptionLength: 150,
-    keywordsCount: 30,
+    keywordsCount: 49,
     prefix: '',
     enablePrefix: false,
     suffix: '',
@@ -593,12 +595,12 @@ export default function App() {
     setFiles(prev =>
       prev.map(f => {
         if (f.id === fileId && f.metadata) {
-          const rule = MARKETPLACE_REGISTRY[settings.targetPlatform] || MARKETPLACE_REGISTRY.general;
-          const updatedScores = calculateSEOAndQualityScores(
+          const updatedScores = SEOScoreEngine.calculateSEOAndQualityScores(
             newTitle,
             f.metadata.keywords,
-            f.metadata.keywordBuckets,
-            rule,
+            [],
+            MARKETPLACE_REGISTRY[settings.targetPlatform || 'general'] || MARKETPLACE_REGISTRY.general,
+            {},
             settings
           );
           return {
@@ -643,11 +645,12 @@ export default function App() {
             { tag: newKw, category: 'attribute' as const, weight: 50 }
           ];
           const rule = MARKETPLACE_REGISTRY[settings.targetPlatform] || MARKETPLACE_REGISTRY.general;
-          const updatedScores = calculateSEOAndQualityScores(
+          const updatedScores = SEOScoreEngine.calculateSEOAndQualityScores(
             f.metadata.title,
             updatedKw,
             updatedBuckets,
             rule,
+            {}, // context
             settings
           );
           return {
@@ -672,11 +675,12 @@ export default function App() {
           const updatedKw = f.metadata.keywords.filter(k => k !== kwToRemove);
           const updatedBuckets = f.metadata.keywordBuckets.filter(b => b.tag !== kwToRemove);
           const rule = MARKETPLACE_REGISTRY[settings.targetPlatform] || MARKETPLACE_REGISTRY.general;
-          const updatedScores = calculateSEOAndQualityScores(
+          const updatedScores = SEOScoreEngine.calculateSEOAndQualityScores(
             f.metadata.title,
             updatedKw,
             updatedBuckets,
             rule,
+            {}, // context
             settings
           );
           return {

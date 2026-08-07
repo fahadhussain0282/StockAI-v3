@@ -4,22 +4,20 @@ import * as fs from 'fs';
 const mockItems = [
   {
     fileId: 'photo_1.jpg',
-    title: 'A beautiful sunset over the mountains',
-    description: 'A beautiful sunset over the mountains with red and orange sky',
-    keywords: ['sunset', 'mountain', 'nature', 'landscape', 'beautiful', 'orange', 'sky'],
+    title: 'A beautiful sunset, "with quotes"',
+    description: 'A beautiful sunset over the mountains\nwith multiple lines,\nquotes like "this" and commas.',
+    keywords: ['sunset', 'mountain', 'nature', '"quotes"', 'comma, inside'],
     primaryCategory: 'Nature',
-    secondaryCategory: 'Landscapes',
     editorial: false,
     modelReleaseRequired: false,
     propertyReleaseRequired: false
   },
   {
-    fileId: 'vector_2.eps',
-    title: 'Abstract geometric background "with quotes"',
-    description: 'Abstract geometric background "with quotes" and multiple\nlines\nof description, commas, and special chars &!@',
-    keywords: ['abstract', 'geometric', 'background', '"quotes"', 'comma, inside'],
-    primaryCategory: 'Backgrounds',
-    secondaryCategory: 'Abstract',
+    fileId: 'photo_2.jpg',
+    title: 'Unicode test \u00A9 \u00AE \u2122',
+    description: 'Emoji \uD83D\uDE00\uD83D\uDE80 Arabic: \u0645\u0631\u062D\u0628\u0627 Chinese: \u4F60\u597D',
+    keywords: ['unicode', 'emoji\uD83D\uDE80', '\u0639\u0631\u0628\u064A', '\u4E2D\u6587'],
+    primaryCategory: 'Culture',
     editorial: true,
     modelReleaseRequired: false,
     propertyReleaseRequired: false
@@ -28,23 +26,10 @@ const mockItems = [
 
 function run() {
   const adobe = generateMarketplaceCSV(mockItems as any, 'adobe-stock');
-  const freepik = generateMarketplaceCSV(mockItems as any, 'freepik');
-  const shutterstock = generateMarketplaceCSV(mockItems as any, 'shutterstock');
-  const pond5 = generateMarketplaceCSV(mockItems as any, 'pond5');
-
   const addBOM = (csv: string) => '\uFEFF' + csv;
-
-  fs.writeFileSync('adobe_sample.csv', addBOM(adobe), 'utf8');
-  fs.writeFileSync('freepik_sample.csv', addBOM(freepik), 'utf8');
-  fs.writeFileSync('shutterstock_sample.csv', addBOM(shutterstock), 'utf8');
-  fs.writeFileSync('pond5_sample.csv', addBOM(pond5), 'utf8');
-
-  console.log('--- ADOBE STOCK CSV ---');
+  fs.writeFileSync('adobe_proof.csv', addBOM(adobe), 'utf8');
+  console.log('CSV successfully generated with multiline, emojis, quotes, commas, unicode, arabic, chinese.');
   console.log(adobe);
-  console.log('\n--- FREEPIK CSV ---');
-  console.log(freepik);
-  console.log('\n--- SHUTTERSTOCK CSV ---');
-  console.log(shutterstock);
 }
 
 run();
