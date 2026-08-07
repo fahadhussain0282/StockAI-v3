@@ -40,7 +40,34 @@ async function validateAuthAndSubscription(req: Request, res: Response): Promise
 
   // Sync and check subscription
   const user = await syncUserLicense(auth.user.id);
-  if (!user || !user.subscription.isActive || user.subscription.isExpired || user.status === 'expired' || user.status === 'suspended') {
+
+  // If user has never had a subscription (fresh signup), grant a 7-day free trial
+  if (!user) {
+    res.status(401).json({ error: 'User not found.', code: 'USER_NOT_FOUND' });
+    return null;
+  }
+
+  const hasFreshAccount = user.subscription.planId === 'plan_free' && !user.subscription.isActive;
+  if (hasFreshAccount) {
+    // Auto-activate a 7-day trial for brand new accounts so they can evaluate the product
+    const trialExpiry = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+    user.subscription = {
+      planId: 'plan_trial',
+      planName: '7-Day Free Trial',
+      price: 0,
+      durationDays: 7,
+      activatedAt: new Date().toISOString(),
+      expiresAt: trialExpiry,
+      isActive: true,
+      isExpired: false,
+      deviceId: ''
+    };
+    user.status = 'active';
+    await (await import('../core/auth')).userStore.updateUser(user.id, user);
+    return { userId: user.id, isAdmin: false };
+  }
+
+  if (user.subscription.isExpired || user.status === 'expired' || user.status === 'suspended') {
     res.status(403).json({
       error: 'Subscription Required. Your StockAI license is not active. Please activate a plan to continue.',
       code: 'SUBSCRIPTION_REQUIRED',
