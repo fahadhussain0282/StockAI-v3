@@ -321,15 +321,8 @@ router.post('/generate-metadata', async (req: Request, res: Response) => {
     const { targetPlatform = 'general' } = req.body.settings || {};
     const marketplaceRule = MARKETPLACE_REGISTRY[targetPlatform] || MARKETPLACE_REGISTRY.general;
 
-    // ── VERBOSE REQUEST LOGGING ──────────────────────────────────────────────
-    console.log(`\n╔══ [generate-metadata] REQUEST ══════════════════════════════`);
-    console.log(`║  User ID          : ${authResult.userId} (admin=${authResult.isAdmin})`);
-    console.log(`║  Requested Provider: ${req.body.provider || '(not specified — will use google-gemini)'}`);
-    console.log(`║  Requested Model  : ${req.body.selectedModel || '(auto)'}`);
-    console.log(`║  Custom Key Sent  : ${!!(req.body.customApiKey && req.body.customApiKey.trim())}`);
-    console.log(`║  File             : ${req.body.fileName || '(unnamed)'} (${req.body.fileType || 'unknown'})`);
-    console.log(`║  Has Image Data   : ${!!(req.body.base64Data && req.body.base64Data.length > 0)}`);
-    console.log(`╚══════════════════════════════════════════════════════════════\n`);
+    // ── Request logging (production-safe, single line) ──────────────────────
+    console.info(`[${requestId}] generate-metadata | user=${authResult.userId} | provider=${req.body.provider || 'auto'} | file=${req.body.fileName || 'unnamed'}`);
 
     // CRITICAL FIX: 25s server-side timeout wrapper — permanently prevents stuck states
     // Server hard limit is 30s; we use 25s to give time for the response to be sent.
@@ -397,20 +390,9 @@ router.post('/generate-metadata', async (req: Request, res: Response) => {
 
     const elapsed = Date.now() - routeStart;
     
-    // VERBOSE SUCCESS LOGGING (Always on in production for diagnostics, NO API KEYS)
-    console.log(`\n╔══ [generate-metadata] SUCCESS ══════════════════════════════`);
-    console.log(`║  Request ID       : ${requestId}`);
-    console.log(`║  Final Provider   : ${metadataResult?.provider}`);
-    console.log(`║  Model            : ${metadataResult?.model}`);
-    console.log(`║  Key Source       : ${(metadataResult as any)?.keySource || 'System Default'}`);
-    console.log(`║  Latency          : ${elapsed}ms`);
-    console.log(`║  Retries          : ${(metadataResult as any)?.retries || 0}`);
-    console.log(`║  Fallback Used    : ${(metadataResult as any)?.fallbackTriggered ? 'Yes' : 'No'}`);
-    console.log(`╚══════════════════════════════════════════════════════════════\n`);
-    
-    if ((metadataResult as any)?.fallbackTriggered) {
-      console.log(`[Request ID: ${requestId}] Fallback Path Trace:`, JSON.stringify((metadataResult as any)?.trace, null, 2));
-    }
+    // ── Success logging (production-safe, single line) ───────────────────────
+    const fallbackStr = (metadataResult as any)?.fallbackTriggered ? ` [fallback: ${JSON.stringify((metadataResult as any)?.trace?.map((t: any) => t.provider))}]` : '';
+    console.info(`[${requestId}] SUCCESS | provider=${metadataResult?.provider} | model=${metadataResult?.model} | latency=${elapsed}ms | keywords=${metadataResult?.keywords?.length}${fallbackStr}`);
 
     // Log telemetry success to DB (non-blocking)
     if (isDbAvailable()) {
